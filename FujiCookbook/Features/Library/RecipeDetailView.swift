@@ -272,7 +272,7 @@ struct RecipeDetailView: View {
             Button { showingPush = true } label: {
                 Label("Push to Camera", systemImage: canPush ? "arrow.up.to.line" : "cable.connector.slash")
                     .font(.headline)
-                    .foregroundStyle(canPush ? .white : Theme.ink3)
+                    .foregroundStyle(canPush ? Theme.onAccent : Theme.ink3)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
                     .background(canPush ? Theme.accent : Theme.paper2,

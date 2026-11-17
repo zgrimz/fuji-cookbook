@@ -314,7 +314,7 @@ struct ShareReportButton: View {
                 Label(preferAddressedMail && !offersMail ? "Share or Save Report" : title,
                       systemImage: offersMail ? "envelope" : "square.and.arrow.up")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onAccent)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.accent))

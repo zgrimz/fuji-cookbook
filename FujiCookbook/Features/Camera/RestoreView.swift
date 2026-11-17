@@ -233,7 +233,7 @@ struct RestoreView: View {
         } label: {
             Label(isWriting ? "Restoring…" : "Restore C\(slot)", systemImage: "arrow.uturn.backward")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.onAccent)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.accent))

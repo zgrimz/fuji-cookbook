@@ -120,6 +120,7 @@ struct RecipeCompareView: View {
                 Label("Choose Recipe", systemImage: "plus.circle")
             }
             .buttonStyle(.borderedProminent)
+            .prominentOnAccentLabel()
             .tint(Theme.accent)
         }
         .frame(maxWidth: .infinity)

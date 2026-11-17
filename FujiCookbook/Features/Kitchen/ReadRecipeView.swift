@@ -111,7 +111,7 @@ struct ReadRecipeView: View {
                 } label: {
                     Label("Choose a Photo", systemImage: "photo")
                         .font(.headline)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onAccent)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
                         .background(Theme.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -167,6 +167,7 @@ struct ReadRecipeView: View {
                 showFilePicker = source == .files
             }
             .buttonStyle(.borderedProminent)
+            .prominentOnAccentLabel()
         }
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)

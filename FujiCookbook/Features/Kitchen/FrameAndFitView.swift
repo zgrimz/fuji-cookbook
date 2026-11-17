@@ -1253,7 +1253,7 @@ private struct CanvasChip: View {
         Button(action: action) {
             VStack(spacing: 5) {
                 RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                    .fill(selected ? Color.white : Theme.ink3)
+                    .fill(selected ? Theme.onAccent : Theme.ink3)
                     .frame(width: glyph.width, height: glyph.height)
                     .frame(width: 26, height: 26)
                 Text(canvas.label)
@@ -1263,7 +1263,7 @@ private struct CanvasChip: View {
                     .monospacedDigit()
                     .opacity(0.7)
             }
-            .foregroundStyle(selected ? Color.white : Theme.ink2)
+            .foregroundStyle(selected ? Theme.onAccent : Theme.ink2)
             .frame(width: 74)
             .padding(.vertical, 9)
             .background(selected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.paper2),
@@ -1295,7 +1295,7 @@ private struct ArrangementChip: View {
                         HStack(spacing: 2) {
                             ForEach(0..<arrangement.columns, id: \.self) { _ in
                                 RoundedRectangle(cornerRadius: 1, style: .continuous)
-                                    .fill(selected ? Color.white : Theme.ink3)
+                                    .fill(selected ? Theme.onAccent : Theme.ink3)
                             }
                         }
                     }
@@ -1305,7 +1305,7 @@ private struct ArrangementChip: View {
                 Text(arrangement.label)
                     .font(.caption.weight(.semibold))
             }
-            .foregroundStyle(selected ? Color.white : Theme.ink2)
+            .foregroundStyle(selected ? Theme.onAccent : Theme.ink2)
             .padding(.horizontal, 11)
             .padding(.vertical, 9)
             .background(selected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.paper2),

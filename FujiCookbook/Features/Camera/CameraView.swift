@@ -260,18 +260,18 @@ struct CameraView: View {
                         // does, so the header text doesn't move when the state changes.
                         ProgressView()
                             .controlSize(.mini)
-                            .tint(.white)
+                            .tint(Theme.onAccent)
                             .frame(width: 10, height: 10)
                     }
                     Text(linkLabel(for: connected, in: state))
                         .font(.caption.weight(.semibold))
                         .kerning(1.0)
                         .textCase(.uppercase)
-                        .foregroundStyle(.white.opacity(0.85))
+                        .foregroundStyle(Theme.onAccent.opacity(0.85))
                 }
                 Text(connected.model?.displayName ?? connected.productName)
                     .font(Theme.serif(24))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onAccent)
                 HStack(spacing: 16) {
                     if let fw = connected.firmwareVersion {
                         Text("Firmware \(fw)")
@@ -286,12 +286,12 @@ struct CameraView: View {
                     Label(connected.capabilityBadge.text, systemImage: connected.capabilityBadge.symbol)
                 }
                 .font(.footnote.weight(.medium))
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(Theme.onAccent.opacity(0.9))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
             .background(Theme.accent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            // Grayscale keeps the green's luminance, so the white text keeps its contrast in both
+            // Grayscale keeps the green's luminance, so `onAccent` text keeps its contrast in both
             // appearances.
             .grayscale(state == .reconnecting ? 1 : 0)
             .animation(.easeInOut(duration: 0.25), value: state)
@@ -428,7 +428,7 @@ struct CameraView: View {
                 } label: {
                     Label("Report a Problem", systemImage: "square.and.arrow.up")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onAccent)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.accent))
@@ -769,7 +769,7 @@ struct CameraView: View {
         if prominent {
             Button(action: action) {
                 label
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(Theme.onAccent)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.accent))

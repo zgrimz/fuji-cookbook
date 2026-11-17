@@ -184,7 +184,7 @@ struct GuidedChoiceRow<Value: Hashable>: View {
         Button { selection = value } label: {
             Text(label)
                 .font(.footnote.weight(selection == value ? .semibold : .medium))
-                .foregroundStyle(selection == value ? Color.white : Theme.ink2)
+                .foregroundStyle(selection == value ? Theme.onAccent : Theme.ink2)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .background(selection == value ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.paper2),
@@ -302,7 +302,7 @@ struct CameraGateCard: View {
                 Button(action: onReconnect) {
                     Text(isDemo ? "Reconnect Demo Camera" : "Reconnect")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onAccent)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 11)
                         .background(Theme.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))

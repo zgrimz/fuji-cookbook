@@ -73,7 +73,7 @@ enum Theme {
                 Text("\(number)")
                     .font(.caption.weight(.semibold))
                     .monospacedDigit()
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onAccent)
                     .frame(width: 24, height: 24)
                     .background(Circle().fill(Theme.accent))
                 Text(title)
@@ -221,7 +221,7 @@ struct FilterChip: View {
         Button(action: action) {
             Text(label)
                 .font(.footnote.weight(selected ? .semibold : .medium))
-                .foregroundStyle(selected ? Color.white : Theme.ink2)
+                .foregroundStyle(selected ? Theme.onAccent : Theme.ink2)
                 .padding(.horizontal, 13)
                 .padding(.vertical, 8)
                 .background(selected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.card),
@@ -280,6 +280,20 @@ private struct DimmedWhenDisabled: ViewModifier {
 
     func body(content: Content) -> some View {
         content.opacity(isEnabled ? 1 : 0.45)
+    }
+}
+
+/// An explicit foreground style replaces the prominent style's own dimmed disabled label, so it is
+/// set only while the button is enabled.
+private struct OnAccentWhenEnabled: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.foregroundStyle(Theme.onAccent)
+        } else {
+            content
+        }
     }
 }
 
@@ -372,6 +386,12 @@ extension View {
     /// Apply the design system's card chrome.
     func themedCard(cornerRadius: CGFloat = 18) -> some View {
         modifier(CardBackground(cornerRadius: cornerRadius))
+    }
+
+    /// Labels a `.borderedProminent` button in `Theme.onAccent`. The style's white label is unreadable
+    /// on the dark-mode accent; a disabled button keeps the style's own grey label.
+    func prominentOnAccentLabel() -> some View {
+        modifier(OnAccentWhenEnabled())
     }
 
     /// Style a `List`/`Form` screen with the warm paper background.

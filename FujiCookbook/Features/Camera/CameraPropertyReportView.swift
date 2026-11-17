@@ -120,13 +120,13 @@ struct CameraPropertyReportView: View {
                 readProperties()
             } label: {
                 HStack(spacing: 8) {
-                    if isRunning { ProgressView().tint(.white) }
+                    if isRunning { ProgressView().tint(Theme.onAccent) }
                     Text(isRunning ? "Reading…"
                          : (maySelect ? (lastRead != nil ? "Read Slot C\(slot) Again" : "Read Slot C\(slot)")
                             : (lastRead != nil ? "Read the Selected Slot Again" : "Read the Selected Slot")))
                         .font(.subheadline.weight(.semibold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.onAccent)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.accent))

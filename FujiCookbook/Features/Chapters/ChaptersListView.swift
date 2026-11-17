@@ -129,6 +129,7 @@ struct ChaptersListView: View {
         } actions: {
             Button("New Chapter") { createChapter() }
                 .buttonStyle(.borderedProminent)
+                .prominentOnAccentLabel()
                 .disabled(recipes.isEmpty)
             if recipes.isEmpty {
                 Text("Create some recipes in the Library first.")

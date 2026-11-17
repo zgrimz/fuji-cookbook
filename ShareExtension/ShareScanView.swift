@@ -240,7 +240,7 @@ struct ShareScanView: View {
                 }
             }
             .font(.headline)
-            .foregroundStyle(.white)
+            .foregroundStyle(Theme.onAccent)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(Theme.accent, in: RoundedRectangle(cornerRadius: 14))

@@ -307,6 +307,7 @@ struct LibraryView: View {
         } actions: {
             Button("New Recipe") { createRecipe() }
                 .buttonStyle(.borderedProminent)
+                .prominentOnAccentLabel()
             Button("Import from File") { showingImporter = true }
             Button("Import from Text") { showingTextImport = true }
             Button("Add \(StarterRecipe.name)") { addStarterRecipe() }

@@ -92,6 +92,7 @@ struct PushView: View {
             if diagnosticMode {
                 Button("Connect Demo Camera") { Task { await camera.connector.connectDemo() } }
                     .buttonStyle(.borderedProminent)
+                    .prominentOnAccentLabel()
             }
         }
     }
