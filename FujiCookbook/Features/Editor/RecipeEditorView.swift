@@ -43,11 +43,12 @@ struct RecipeEditorView: View {
         Form {
             metadataSection
             modelSection
+            // The camera's IQ menu order, which `RecipeField` and the recipe screen follow too.
             filmSection
+            effectsSection
+            if fields.contains(.whiteBalance) { whiteBalanceSection }
             if fields.contains(.dynamicRange) || fields.contains(.dRangePriority) { dynamicRangeSection }
             toneSection
-            if fields.contains(.whiteBalance) { whiteBalanceSection }
-            effectsSection
             RecipePhotoSection(photoDrafts: $photos.drafts)
             notesSection
             cameraNameSection
@@ -309,11 +310,11 @@ struct RecipeEditorView: View {
             if fields.contains(.sharpness) {
                 OptionalIntSliderRow(title: "Sharpness", value: $draft.sharpness, range: draft.range(.sharpness))
             }
-            if fields.contains(.clarity) {
-                OptionalIntSliderRow(title: "Clarity", value: $draft.clarity, range: draft.range(.clarity))
-            }
             if fields.contains(.highISONR) {
                 OptionalIntSliderRow(title: "High ISO NR", value: $draft.highISONR, range: draft.range(.highISONR))
+            }
+            if fields.contains(.clarity) {
+                OptionalIntSliderRow(title: "Clarity", value: $draft.clarity, range: draft.range(.clarity))
             }
         } header: {
             Text("Tone & Detail")
