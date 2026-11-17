@@ -46,10 +46,8 @@ struct ReadOnlyPropertySweep {
                     if code == FujiPTP.Prop.slotSelector, let value {
                         sweep.slot = FujiEncoding.decodeUInt16(value).map(Int.init)
                     }
-                } catch CameraError.disconnectedDuringOperation {
-                    throw CameraError.disconnectedDuringOperation
-                } catch CameraError.timeout {
-                    throw CameraError.timeout
+                } catch let error where CameraError.endsSession(error) {
+                    throw error
                 } catch {
                     let read = CameraCompatibilityReport.propertyRead(code: code, value: nil, error: error)
                     entry.valueError = read.error
@@ -66,10 +64,8 @@ struct ReadOnlyPropertySweep {
                             entry.descriptorError = "unparseable descriptor (\(raw.count) bytes)"
                         }
                     }
-                } catch CameraError.disconnectedDuringOperation {
-                    throw CameraError.disconnectedDuringOperation
-                } catch CameraError.timeout {
-                    throw CameraError.timeout
+                } catch let error where CameraError.endsSession(error) {
+                    throw error
                 } catch {
                     entry.descriptorError = error.cameraLogDescription
                     descriptorRefusals += 1

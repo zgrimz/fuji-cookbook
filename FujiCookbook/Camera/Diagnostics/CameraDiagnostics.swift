@@ -50,6 +50,12 @@ final class CameraDiagnostics {
     /// that offers their report. It degrades instead of refusing, reading whichever slot the camera
     /// already had selected.
     ///
+    /// An error that ends the session (`CameraError.endsSession`) fails the status and stops the
+    /// report where it met it. On the read that checks the select, no probes are returned, as when
+    /// the select fails. In the property reads, the probes taken before it are returned and
+    /// recorded, none if it met the first, and the selector is left on the probed slot, not put
+    /// back.
+    ///
     /// Returns the slot it actually read, which is not always the one it was asked for. The probes
     /// are empty, beside the requested slot, when no camera is connected or the slot select failed.
     /// Throws `CameraBusy`, having sent nothing, when another operation held the gate.
@@ -97,21 +103,34 @@ final class CameraDiagnostics {
             // would file one slot's values under another slot's name, and the report would agree
             // with itself while doing it. Here that degrades rather than fails — the values are
             // still worth having, labelled with the slot the camera says they came from.
-            let landed = await readSelector(transport)
+            let landed: Int?
+            do { landed = try await readSelectorUnlessSessionEnds(transport) } catch {
+                session.setStatus(.failed(message(error)))
+                return (slot, [])
+            }
             if let landed, landed != slot {
                 CameraLog.error("Property report: asked for C\(slot), camera reports C\(landed) — reporting it as C\(landed)")
                 reports.note("property report: slot select answered OK but did not take (asked C\(slot), camera reports C\(landed)); the report below describes C\(landed)")
             }
             probedSlot = landed ?? slot
         } else {
-            probedSlot = await readSelector(transport) ?? slot
+            let current: Int?
+            do { current = try await readSelectorUnlessSessionEnds(transport) } catch {
+                session.setStatus(.failed(message(error)))
+                return (slot, [])
+            }
+            probedSlot = current ?? slot
             CameraLog.info("Property report: \(session.connected?.productName ?? "this body") has no USB slot protocol, so no slot was selected — reading C\(probedSlot), the slot it already has")
         }
 
         var probes: [PropertyProbe] = []
+        var sessionEndedBy: Error?
         for (code, name) in codes {
             var value: Data?, valueError: String?
-            do { value = try await transport.readProperty(code) } catch { valueError = message(error) }
+            do { value = try await transport.readProperty(code) } catch {
+                guard !CameraError.endsSession(error) else { sessionEndedBy = error; break }
+                valueError = message(error)
+            }
 
             var descriptor: FujiPTP.PropertyDescriptor?, descriptorError: String?
             do {
@@ -124,6 +143,7 @@ final class CameraDiagnostics {
                 descriptorError = String(format: "no descriptor (camera answered 0x%04X %@)",
                                          code, FujiPTP.responseName(code) ?? "")
             } catch {
+                guard !CameraError.endsSession(error) else { sessionEndedBy = error; break }
                 descriptorError = message(error)
             }
 
@@ -149,6 +169,14 @@ final class CameraDiagnostics {
             report.propertySweep?.capturedAt = CameraCompatibilityReport.timestamp()
             report.propertySweep?.evidenceID = UUID().uuidString
             report.touch()
+        }
+        if let sessionEndedBy {
+            // What was read before it stays in the report. The selector is left on the probed slot,
+            // as after a slot walk that fails: see the `catch` that ends `SlotReader.refresh`.
+            reports.note("property report aborted: \(sessionEndedBy.cameraLogDescription)")
+            reports.persist()
+            session.setStatus(.failed(message(sessionEndedBy)))
+            return (probedSlot, probes)
         }
         reports.persist()
         let answered = probes.filter { $0.value != nil }.count
@@ -349,6 +377,12 @@ final class CameraDiagnostics {
     /// The selector's value; see `SlotSelector.current`.
     private func readSelector(_ transport: CameraTransport) async -> Int? {
         await SlotSelector(transport: transport, reports: reports).read().value
+    }
+
+    /// The selector, or nil when it didn't answer one, for the reads that decide which slot the
+    /// report describes. An error that ends the session is thrown, not taken for "no answer".
+    private func readSelectorUnlessSessionEnds(_ transport: CameraTransport) async throws -> Int? {
+        try await SlotSelector(transport: transport, reports: reports).readUnlessSessionEnds().value
     }
 
     /// Puts the selector back; see `SlotSelector.restore`.

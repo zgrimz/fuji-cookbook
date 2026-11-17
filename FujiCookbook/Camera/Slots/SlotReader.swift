@@ -145,14 +145,14 @@ final class SlotReader {
                 session.setStatus(.working("Reading slot C\(index)…"))
                 do {
                     try await transport.writeProperty(FujiPTP.Prop.slotSelector, FujiEncoding.packU16(index))
-                } catch CameraError.disconnectedDuringOperation {
-                    throw CameraError.disconnectedDuringOperation
+                } catch let error where CameraError.endsSession(error) {
+                    throw error
                 } catch {
-                    // C1 refusing a select is a dead session, a body without the slot protocol, or a
-                    // body too busy to take commands — fatal, and the error carries the camera's
-                    // answer so the message can say which. A later slot refusing is a body with
-                    // fewer slots than the registry assumed: keep what was read, record where it
-                    // stopped, and stay connected.
+                    // C1 refusing a select is a body without the slot protocol, one too busy to take
+                    // commands, or one answering that the session isn't open — fatal, and the error
+                    // carries the camera's answer so the message can say which. A later slot refusing
+                    // is a body with fewer slots than the registry assumed: keep what was read, record
+                    // where it stopped, and stay connected.
                     guard index > 1 else { throw CameraError.slotSelectFailed(index, after: error) }
                     let detail = error.cameraLogDescription
                     reads.append(CameraCompatibilityReport.SlotRead(slot: index, selected: false, selectError: detail))
@@ -178,7 +178,7 @@ final class SlotReader {
                 // and ignored would give N identical reads filed under N different slots, and that
                 // fiction feeds the Import screen, the push screen's "Currently:" warnings and this
                 // report's slot section. Stop rather than record something untrue.
-                let selected = await selector.read().value
+                let selected = try await selector.readUnlessSessionEnds().value
                 guard selected == index else {
                     let detail = "asked for C\(index), camera reports \(selected.map { "C\($0)" } ?? "nothing")"
                     reads.append(CameraCompatibilityReport.SlotRead(slot: index, selected: false, selectError: detail))
@@ -192,8 +192,8 @@ final class SlotReader {
                 var name: String?
                 do {
                     name = try await transport.readProperty(FujiPTP.Prop.presetName).flatMap(FujiEncoding.parsePTPString)
-                } catch CameraError.disconnectedDuringOperation {
-                    throw CameraError.disconnectedDuringOperation
+                } catch let error where CameraError.endsSession(error) {
+                    throw error
                 } catch {
                     read.properties.append(CameraCompatibilityReport.propertyRead(code: FujiPTP.Prop.presetName, value: nil, error: error))
                 }
@@ -386,8 +386,8 @@ final class SlotReader {
 
     /// Every preset property of the selected slot, one read each, with a failure recorded per
     /// property rather than aborting the slot: a body that lacks 0xD1A2 still yields the others,
-    /// and the slots after it are still read. Only a dead session — disconnect or
-    /// timeout — stops the loop.
+    /// and the slots after it are still read. Only an error that ends the session
+    /// (`CameraError.endsSession`) stops the loop.
     private func readPresetProps(_ transport: CameraTransport) async throws
         -> (values: [UInt16: Data], records: [CameraCompatibilityReport.PropertyRead]) {
         var values: [UInt16: Data] = [:]
@@ -397,10 +397,8 @@ final class SlotReader {
                 let d = try await transport.readProperty(p.rawValue)
                 if let d { values[p.rawValue] = d }
                 records.append(CameraCompatibilityReport.propertyRead(code: p.rawValue, value: d, error: nil))
-            } catch CameraError.disconnectedDuringOperation {
-                throw CameraError.disconnectedDuringOperation
-            } catch CameraError.timeout {
-                throw CameraError.timeout
+            } catch let error where CameraError.endsSession(error) {
+                throw error
             } catch {
                 if case CameraError.ptpError(let code) = error, code == FujiPTP.responseDevicePropNotSupported {
                     reports.update { $0.noteUnsupported(code: p.rawValue) }

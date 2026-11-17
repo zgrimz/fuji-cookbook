@@ -29,8 +29,21 @@ actor MockCameraTransport: CameraTransport {
         case normal
         case response(UInt16)
         case value(Data?)
+        /// No answer, so the transport's command timeout fires (`ImageCaptureTransport.sendPTP`).
+        /// Not one body's behaviour: any body that sleeps or stalls the pipe mid-command times out.
+        case noResponse
     }
     private var queuedReads: [UInt16: [QueuedRead]] = [:]
+    /// One-shot write answers, taken in order per property by the writes that land: a write a fault
+    /// refuses or ignores takes none. `.normal` lets one write through, so a test can let the first
+    /// slot select land and lose the second.
+    enum QueuedWrite: Sendable {
+        case normal
+        /// The write lands and its answer never comes, as `MockCameraFaults.lostWriteResponseCodes`
+        /// does for every write of a property.
+        case noResponse
+    }
+    private var queuedWrites: [UInt16: [QueuedWrite]] = [:]
     enum QueuedObjectHandles: Sendable { case normal; case data(Data?) }
     private var queuedObjectHandles: [QueuedObjectHandles] = []
     private(set) var conversionTriggerCount = 0
@@ -55,6 +68,10 @@ actor MockCameraTransport: CameraTransport {
 
     func queueRead(_ result: QueuedRead, for code: UInt16) {
         queuedReads[code, default: []].append(result)
+    }
+
+    func queueWrite(_ result: QueuedWrite, for code: UInt16) {
+        queuedWrites[code, default: []].append(result)
     }
 
     func ignoreNextWrite(to code: UInt16) { ignoredNextWrites.insert(code) }
@@ -305,6 +322,7 @@ actor MockCameraTransport: CameraTransport {
             case .normal: break
             case .response(let response): throw CameraError.ptpError(code: response)
             case .value(let data): return data
+            case .noResponse: throw CameraError.timeout
             }
         }
         if let response = faults.readResponseCodes[code] {
@@ -487,6 +505,11 @@ actor MockCameraTransport: CameraTransport {
                 slots[currentSlot, default: [:]][FujiPTP.PresetProp.wbShiftR.rawValue] = FujiEncoding.packI16(0)
                 slots[currentSlot, default: [:]][FujiPTP.PresetProp.wbShiftB.rawValue] = FujiEncoding.packI16(0)
             }
+        }
+        if var pending = queuedWrites[code], !pending.isEmpty {
+            let queued = pending.removeFirst()
+            queuedWrites[code] = pending.isEmpty ? nil : pending
+            if case .noResponse = queued { throw CameraError.timeout }
         }
         if faults.lostWriteResponseCodes.contains(code) { throw CameraError.timeout }
     }

@@ -139,6 +139,30 @@ extension CameraError {
 }
 
 extension CameraError {
+    /// Whether `error` ends the session for the operation that met it: a loop over camera commands
+    /// stops and throws it, rather than recording it against one property and sending the next.
+    ///
+    /// Two errors do, as this app's policy. A disconnect leaves no session to send to. A timeout
+    /// leaves the command's completion unknown (zgrimz/fujifilm-ptp-reference
+    /// `docs/11-client-implementation.md#report-command-outcomes-and-state-verification-independently`),
+    /// and the command can still complete after it, while the next one is in flight
+    /// (`docs/09-platform-notes.md`). The timeout itself is a budget the transport chooses
+    /// (`ImageCaptureTransport.sendPTP`), not something the protocol defines, so the app stops
+    /// rather than go on reading through an exchange it can't account for. Everything else, a
+    /// refusal above all, is about the one command.
+    ///
+    /// Not whether a write landed: any failure that isn't the camera's own response leaves that
+    /// unknown, session-ending or not, which is why a push stops on any of them
+    /// (`SlotWriter.performSlotWrite`, `RawConversionService.commandCompletionIsUnknown`).
+    static func endsSession(_ error: Error) -> Bool {
+        switch error as? CameraError {
+        case .disconnectedDuringOperation?, .timeout?: return true
+        default: return false
+        }
+    }
+}
+
+extension CameraError {
     /// True when this error is the camera *answering*, which is proof the PTP session is alive.
     ///
     /// A response code — even a refusal — travelled back down the cable, so whatever went wrong,

@@ -49,6 +49,17 @@ struct SlotSelector {
     /// would open a second report access inside the first.
     func read() async -> SelectorRead {
         do {
+            return try await readUnlessSessionEnds()
+        } catch {
+            return .failed(error.cameraLogDescription)
+        }
+    }
+
+    /// `read()`, except that an error that ends the session (`CameraError.endsSession`) is thrown
+    /// rather than filed as `.failed`: the check after a select, where a failed read would otherwise
+    /// count as a select the camera ignored.
+    func readUnlessSessionEnds() async throws -> SelectorRead {
+        do {
             guard let bytes = try await transport.readProperty(FujiPTP.Prop.slotSelector), bytes.count == 2,
                   let bank = FujiEncoding.decodeUInt16(bytes) else {
                 return .failed("the selector answered no two-byte value")
@@ -56,6 +67,8 @@ struct SlotSelector {
             return .value(Int(bank))
         } catch CameraError.ptpError(let code) where code == FujiPTP.responseDevicePropNotSupported {
             return .unsupported
+        } catch let error where CameraError.endsSession(error) {
+            throw error
         } catch {
             return .failed(error.cameraLogDescription)
         }
