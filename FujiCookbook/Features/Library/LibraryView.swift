@@ -204,7 +204,11 @@ struct LibraryView: View {
                             Label("Delete", systemImage: "trash")
                         }.tint(.red)
                         Button { toggleFavorite(recipe) } label: {
-                            Label("Favorite", systemImage: recipe.isFavorite ? "star.slash" : "star")
+                            Label {
+                                Text("Favorite")
+                            } icon: {
+                                Self.favoriteSwipeIcon(recipe.isFavorite ? "star.slash.fill" : "star.fill")
+                            }
                         }.tint(Theme.star)
                     }
             }
@@ -410,6 +414,17 @@ struct LibraryView: View {
         } catch {
             scanError = error.localizedDescription
         }
+    }
+
+    /// The Favorite swipe action's glyph. iOS paints a swipe action's symbol white, which the
+    /// dark-mode amber can't carry, so the symbol is coloured `onAmber` and drawn as it is. Filled and
+    /// semibold at this size, it matches the weight of the system's Delete glyph beside it.
+    private static func favoriteSwipeIcon(_ symbol: String) -> Image {
+        let configuration = UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
+        guard let glyph = UIImage(systemName: symbol, withConfiguration: configuration) else {
+            return Image(systemName: symbol)
+        }
+        return Image(uiImage: glyph.withTintColor(UIColor(Theme.onAmber), renderingMode: .alwaysOriginal))
     }
 
     private func toggleFavorite(_ recipe: Recipe) {
