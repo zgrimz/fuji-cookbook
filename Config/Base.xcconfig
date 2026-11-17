@@ -11,8 +11,8 @@ DEVELOPMENT_TEAM = MWW68W9GDA
 
 // The version every target ships with. App Store Connect refuses an upload whose app and Share
 // Extension disagree, so both read the two numbers from here rather than from per-target settings.
-MARKETING_VERSION = 1.1
-CURRENT_PROJECT_VERSION = 17
+MARKETING_VERSION = 1.2
+CURRENT_PROJECT_VERSION = 18
 APP_IDENTIFIER_BASE = xyz.grovehouse.fujicookbookapp
 APP_GROUP_IDENTIFIER = group.$(APP_IDENTIFIER_BASE)
 ICLOUD_CONTAINER_IDENTIFIER = iCloud.$(APP_IDENTIFIER_BASE)
