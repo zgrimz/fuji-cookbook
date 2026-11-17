@@ -53,9 +53,9 @@ final class ThemeIncreasedContrastTests: XCTestCase {
     func testEveryOtherTokenKeepsItsNormalValue() {
         let unchanged: [(name: String, color: Color)] = [
             ("paper", Theme.paper), ("paper2", Theme.paper2), ("card", Theme.card), ("ink", Theme.ink),
-            ("accent", Theme.accent), ("onAccent", Theme.onAccent), ("accentSoft", Theme.accentSoft),
-            ("amber", Theme.amber), ("amberSoft", Theme.amberSoft), ("star", Theme.star),
-            ("warning", Theme.warning),
+            ("accent", Theme.accent), ("onAccent", Theme.onAccent), ("liveDot", Theme.liveDot),
+            ("accentSoft", Theme.accentSoft), ("amber", Theme.amber), ("onAmber", Theme.onAmber),
+            ("amberSoft", Theme.amberSoft), ("star", Theme.star), ("warning", Theme.warning),
         ]
         for style in Self.appearances {
             for token in unchanged {
