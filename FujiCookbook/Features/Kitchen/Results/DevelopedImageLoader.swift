@@ -21,6 +21,15 @@ actor DevelopedImageLoader {
         DevelopedImageCache.store(image, for: versionID, maxLongEdge: maxLongEdge)
         return image
     }
+
+    /// The version's developed JPEG bytes as the camera returned them, EXIF included, or nil when
+    /// the store holds none for it.
+    func jpeg(for versionID: UUID) -> Data? {
+        var descriptor = FetchDescriptor<CookedVersion>(predicate: #Predicate { $0.uuid == versionID })
+        descriptor.fetchLimit = 1
+        guard let data = try? modelContext.fetch(descriptor).first?.imageData, !data.isEmpty else { return nil }
+        return data
+    }
 }
 
 /// Decoded display copies, keyed by version and size. Versions are immutable once stored, so a

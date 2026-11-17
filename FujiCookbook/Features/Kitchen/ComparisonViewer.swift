@@ -87,10 +87,12 @@ struct ComparisonViewer: View {
         .task(id: photo.uuid) { await prepare() }
         .sheet(isPresented: $showDiagnostics) { diagnosticsSheet }
         .photoExportPresentation(share: $shareItem, message: $saveMessage)
+        .confirmationToast($savedConfirmation)
     }
 
     @State private var saver = ImageSaver()
     @State private var saveMessage: String?
+    @State private var savedConfirmation: String?
     @State private var shareItem: ShareItem?
 
     /// The one place that reads the model. Everything else works off `versions`.
@@ -311,7 +313,9 @@ struct ComparisonViewer: View {
         // Save the original developed JPEG bytes so EXIF (camera, exposure, capture date…) is kept —
         // never the downsampled proxy the panes are drawn from.
         guard let data = model(for: version)?.imageData else { return }
-        saver.save(data: data) { saveMessage = ImageSaver.message(for: $0) }
+        saver.save(data: data) { error in
+            if let error { saveMessage = ImageSaver.message(for: error) } else { savedConfirmation = "Saved to Photos" }
+        }
     }
 
     private func share(_ version: VersionSnapshot) {

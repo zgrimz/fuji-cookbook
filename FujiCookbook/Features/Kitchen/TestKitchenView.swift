@@ -21,8 +21,8 @@ struct TestKitchenView: View {
     @State private var showRecipePicker = false
     @State private var showingProblemReport = false
     @State private var isCooking = false
-    /// The batch just developed — drives the push to its saved results.
-    @State private var cookedBatchID: UUID?
+    /// The run just developed — drives the push to its saved results.
+    @State private var developedRun: DevelopRun?
     /// The alert for a run that went wrong, so a total failure isn't silent. See `CookFailure`.
     @State private var failure: CookFailure?
     /// The D185 profile dump behind a total failure. Kept separate from `failure` so it
@@ -74,8 +74,8 @@ struct TestKitchenView: View {
         .paperBackground()
         .navigationTitle("Test Kitchen")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(item: $cookedBatchID) { id in
-            SavedComparisonsView(batchID: id)
+        .navigationDestination(item: $developedRun) { run in
+            SavedComparisonsView(run: run)
         }
         .cookFailureAlert($failure)
         .sheet(isPresented: $showingProblemReport) {
@@ -257,7 +257,7 @@ struct TestKitchenView: View {
                 do {
                     if let batchID = try await CookStore.persistChecked(comparisons, fullResolution: false,
                                                                        into: modelContext) {
-                        cookedBatchID = batchID
+                        developedRun = DevelopRun(batchID: batchID, comparisons: comparisons)
                     } else {
                         // Every cell failed. Report the camera's reason rather than doing nothing, and
                         // keep the profile dump so a layout failure can actually be characterised.

@@ -3,9 +3,10 @@ import SwiftData
 import UIKit
 
 /// Browse the developed photos saved in the app, from Develop and Test Kitchen runs alike, as a
-/// gallery of recipe-labelled cards grouped by run. Two modes: scoped to a single batch (the
-/// destination right after a cook) or the full history, which can be narrowed to one recipe. Tap a
-/// card to open its versions in `ComparisonViewer`.
+/// gallery of recipe-labelled cards grouped by run. Two modes: scoped to a single batch (where
+/// Develop and Test Kitchen land after a cook, with that run's failures and Save All) or the full
+/// history, which can be narrowed to one recipe. Tap a card to open its versions in
+/// `ComparisonViewer`.
 struct SavedComparisonsView: View {
     @Environment(\.modelContext) private var modelContext
 
@@ -24,14 +25,30 @@ struct SavedComparisonsView: View {
     private var allPhotos: [CookedPhoto]
 
     private let batchID: UUID?
+    /// The run's develops that produced no photo; only a cook that just ran knows them.
+    private let failures: [FailedDevelop]
 
     /// The recipe the history is narrowed to; nil shows every version.
     @State private var recipeFilter: String?
     @State private var pendingDelete: ResultPhoto?
     @State private var loader: DevelopedImageLoader?
+    @State private var saver = ImageSaver()
+    @State private var isSavingAll = false
+    @State private var savedConfirmation: String?
+    @State private var saveError: String?
+
+    /// `DiagnosticMode` gates the conversion-profile report on a failure.
+    @AppStorage(DiagnosticMode.key) private var diagnosticMode = false
 
     init(batchID: UUID? = nil) {
         self.batchID = batchID
+        failures = []
+    }
+
+    /// The run a cook just filed, with the develops in it that failed.
+    init(run: DevelopRun) {
+        batchID = run.batchID
+        failures = run.failures
     }
 
     var body: some View {
@@ -44,7 +61,7 @@ struct SavedComparisonsView: View {
         let filter = recipeFilter.flatMap { recipes.contains($0) ? $0 : nil }
         let models = Dictionary(allPhotos.map { ($0.uuid, $0) }, uniquingKeysWith: { first, _ in first })
         return Group {
-            if gallery.isEmpty {
+            if gallery.isEmpty && failures.isEmpty {
                 ContentUnavailableView("No Results Yet", systemImage: "photo.stack",
                                        description: Text("Photos you develop in the Kitchen are kept here."))
             } else {
@@ -56,6 +73,7 @@ struct SavedComparisonsView: View {
                         ForEach(gallery.runs(recipe: filter)) { run in
                             runSection(run, models: models, filter: filter)
                         }
+                        if !failures.isEmpty { failuresSection }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
@@ -65,6 +83,20 @@ struct SavedComparisonsView: View {
         .background(Theme.paper.ignoresSafeArea())
         .navigationTitle(batchID == nil ? "Recent Results" : "Results")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if batchID != nil, !gallery.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    let versions = gallery.runs(recipe: nil).flatMap(\.entries).flatMap(\.versions).map(\.id)
+                    Button(versions.count == 1 ? "Save to Photos" : "Save All to Photos",
+                           systemImage: "square.and.arrow.down.on.square") { saveAll(versions) }
+                        .disabled(isSavingAll || loader == nil)
+                }
+            }
+        }
+        .confirmationToast($savedConfirmation)
+        .alert("Save to Photos", isPresented: Binding(isPresent: $saveError)) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(saveError ?? "") }
         .task { loader = DevelopedImageLoader(modelContainer: modelContext.container) }
         .confirmationDialog(deleteTitle, isPresented: Binding(isPresent: $pendingDelete),
                             titleVisibility: .visible, presenting: pendingDelete) { photo in
@@ -125,6 +157,69 @@ struct SavedComparisonsView: View {
                               : Date.FormatStyle.dateTime.year().month(.abbreviated).day().hour().minute()
         let count = run.entries.count
         return "\(run.date.formatted(format)) · \(count) photo\(count == 1 ? "" : "s")"
+    }
+
+    /// The develops that produced no photo, at the foot of the run, with the way to report them:
+    /// this is where someone is standing when a develop fails, and the report already carries the
+    /// log the failure wrote.
+    private var failuresSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Theme.SectionLabel("Couldn't Develop").padding(.horizontal, 4).padding(.top, 6)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(failures) { failure in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Label {
+                            Text(failure.title).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.ink)
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning)
+                        }
+                        Text(failure.message)
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.ink2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if diagnosticMode, let diagnostics = failure.diagnostics {
+                            DiagnosticsDisclosure(text: diagnostics)
+                        }
+                    }
+                    .padding(14)
+                    Rectangle().fill(Theme.line).frame(height: 1)
+                }
+                ReportProblemRow(prompt: ReportProblemRow.kitchenPrompt)
+                    .padding(14)
+            }
+            .themedCard(cornerRadius: 16)
+        }
+    }
+
+    // MARK: Save
+
+    /// Saves each version's developed JPEG, EXIF included, one at a time so only one is in memory.
+    /// The task outlives the screen on purpose: a save someone started should finish if they leave.
+    private func saveAll(_ versionIDs: [UUID]) {
+        guard let loader, !isSavingAll else { return }
+        isSavingAll = true
+        Task {
+            defer { isSavingAll = false }
+            var saved = 0
+            for id in versionIDs {
+                guard let data = await loader.jpeg(for: id) else { continue }
+                let error: Error? = await withCheckedContinuation { continuation in
+                    saver.save(data: data) { continuation.resume(returning: $0) }
+                }
+                if let error {
+                    saveError = ImageSaver.message(for: error)
+                    return
+                }
+                saved += 1
+            }
+            if saved == 0 {
+                saveError = "None of these photos could be read from the app's library."
+            } else if saved < versionIDs.count {
+                savedConfirmation = "Saved \(saved) of \(versionIDs.count) photos to Photos"
+            } else {
+                savedConfirmation = saved == 1 ? "Saved to Photos" : "Saved \(saved) photos to Photos"
+            }
+        }
     }
 
     // MARK: Delete

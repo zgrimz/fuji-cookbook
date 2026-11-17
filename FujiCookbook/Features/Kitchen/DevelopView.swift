@@ -41,6 +41,9 @@ struct DevelopView: View {
     @State private var probeReport: String?
     @State private var isProbing = false
     @State private var showResults = false
+    /// The run just filed, which pushes its Recent Results; see `cook`.
+    @State private var developedRun: DevelopRun?
+    @State private var showingProblemReport = false
     @State private var isCooking = false
     /// The alert for a run that went wrong, so a dead end is never silent. See `CookFailure`.
     @State private var failure: CookFailure?
@@ -102,7 +105,13 @@ struct DevelopView: View {
                 }
             }
         }
+        .navigationDestination(item: $developedRun) { run in
+            SavedComparisonsView(run: run)
+        }
         .sheet(isPresented: $showGuide) { ConnectionGuideView() }
+        .sheet(isPresented: $showingProblemReport) {
+            NavigationStack { DiagnosticsReportView() }
+        }
         .sheet(isPresented: $showRecipePicker) {
             RecipePickerSheet(title: "Choose Recipe",
                               choices: recipeChoices,
@@ -270,7 +279,12 @@ struct DevelopView: View {
             Button { showGuide = true } label: {
                 Label("Connection Help & Requirements", systemImage: "questionmark.circle")
             }
-            if presentation == .standalone { ReportProblemRow(prompt: ReportProblemRow.kitchenPrompt) }
+            // An action, not a push: this stack declares `.navigationDestination(item:)` above, and a
+            // destination-form `NavigationLink` shares its presentation slot and pushes the wrong
+            // screen.
+            if presentation == .standalone {
+                ReportProblemRow(prompt: ReportProblemRow.kitchenPrompt) { showingProblemReport = true }
+            }
             if presentation == .cameraTest {
                 Text("View the photo, then tap Continue Camera Test to record your observation.")
                     .font(.caption)
@@ -325,8 +339,15 @@ struct DevelopView: View {
                         complete(run: run, results: results, batchID: nil, saveFailed: true)
                     }
                 } else {
+                    // A filed run opens in Recent Results, where Test Kitchen's runs land too. The sheet
+                    // stays for the two outcomes with nothing filed to show: every develop failed, or
+                    // the store refused the batch and only the recovery copies are left to export.
                     do {
-                        try await CookStore.persistChecked(comparisons, fullResolution: true, into: modelContext)
+                        if let batchID = try await CookStore.persistChecked(comparisons, fullResolution: true,
+                                                                           into: modelContext) {
+                            developedRun = DevelopRun(batchID: batchID, results: results)
+                            return
+                        }
                         resultsSaveFailed = false
                     } catch {
                         resultsSaveFailed = true

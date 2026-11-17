@@ -3,7 +3,9 @@ import SwiftUI
 import UIKit
 
 /// Shows what a cook produced: a preview of each developed JPEG with Save to Photos and Share, and
-/// a row for each failure. Develop shows it after every run, Test Kitchen after a Camera Test run.
+/// a row for each failure. Camera Test runs show it from Develop and Test Kitchen alike; outside the
+/// test, Develop shows it only when nothing was filed to Recent Results — every develop failed, or
+/// the store refused the batch and the recovery copies are all there is.
 struct KitchenResultView: View {
     let results: [ConversionResult]
     var onContinueTest: (() -> Void)?
@@ -23,11 +25,14 @@ struct KitchenResultView: View {
     @State private var shareItem: ShareItem?
     @State private var saver = ImageSaver()
     @State private var saveMessage: String?
+    @State private var savedConfirmation: String?
     /// A display proxy per developed result, decoded off the main actor from bytes read on demand
     /// and let go. The sheet follows a batch of full-resolution develops, 25.7 MB each on the X-T50
     /// (zgrimz/fujifilm-ptp-reference `docs/05-raw-conversion.md`), and `UIImage(data:)` would keep
     /// every one of them alive behind its image.
     @State private var images: [UUID: UIImage] = [:]
+    /// Results whose preview has been tried, decoded or not, so a failed decode reads as one.
+    @State private var attempted: Set<UUID> = []
 
     /// Long edge of the display proxies: the same compromise `ComparisonImageStore` makes, above a
     /// phone's pixel width and far below a 40MP develop.
@@ -48,43 +53,36 @@ struct KitchenResultView: View {
                     if let guidance = resultGuidance[result.id], !guidance.isEmpty {
                         Text(guidance).font(.subheadline).foregroundStyle(Theme.ink2)
                     }
-                    if let image = images[result.id] {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .listRowInsets(EdgeInsets())
+                    preview(for: result)
 
-                        if !result.clampedFields.isEmpty {
-                            Label("Adjusted before developing: \(result.clampedFields.joined(separator: ", "))",
-                                  systemImage: "slider.horizontal.below.rectangle")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
+                    if !result.clampedFields.isEmpty {
+                        Label("Adjusted before developing: \(result.clampedFields.joined(separator: ", "))",
+                              systemImage: "slider.horizontal.below.rectangle")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
 
-                        ForEach(result.notes, id: \.self) { note in
-                            Label(note, systemImage: "info.circle")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
+                    ForEach(result.notes, id: \.self) { note in
+                        Label(note, systemImage: "info.circle")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
 
-                        ForEach(result.warnings, id: \.self) { warning in
-                            Label(warning, systemImage: "exclamationmark.triangle.fill")
-                                .font(.footnote)
-                                .foregroundStyle(Theme.warning)
-                        }
+                    ForEach(result.warnings, id: \.self) { warning in
+                        Label(warning, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.warning)
+                    }
 
-                        Button { save(result) } label: {
-                            Label("Save to Photos", systemImage: "square.and.arrow.down")
-                        }
-                        Button { share(result) } label: {
-                            Label("Share…", systemImage: "square.and.arrow.up")
-                        }
-                        if saveFailed, let recovered = result.recoveryFileURL {
-                            ShareLink(item: recovered) {
-                                Label("Export saved recovery copy…", systemImage: "doc.badge.arrow.up")
-                            }
+                    Button { save(result) } label: {
+                        Label("Save to Photos", systemImage: "square.and.arrow.down")
+                    }
+                    Button { share(result) } label: {
+                        Label("Share…", systemImage: "square.and.arrow.up")
+                    }
+                    if saveFailed, let recovered = result.recoveryFileURL {
+                        ShareLink(item: recovered) {
+                            Label("Export saved recovery copy…", systemImage: "doc.badge.arrow.up")
                         }
                     }
                     diagnosticsView(result.diagnostics)
@@ -143,7 +141,7 @@ struct KitchenResultView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Theme.paper.ignoresSafeArea())
-        .navigationTitle(successes.isEmpty ? "Develop failed" : successes.count > 1 ? "\(successes.count) Developed" : "Developed")
+        .navigationTitle(Self.title(developed: successes.count, of: results.count))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
@@ -154,7 +152,37 @@ struct KitchenResultView: View {
             }
         }
         .photoExportPresentation(share: $shareItem, message: $saveMessage)
+        .confirmationToast($savedConfirmation)
         .task { await loadImages() }
+    }
+
+    /// "Developed", "3 Developed", or "2 of 3 Developed" when some failed, so a partial run never
+    /// reads as a whole one.
+    static func title(developed: Int, of total: Int) -> String {
+        if developed == 0 { return "Develop failed" }
+        if developed < total { return "\(developed) of \(total) Developed" }
+        return developed > 1 ? "\(developed) Developed" : "Developed"
+    }
+
+    @ViewBuilder
+    private func preview(for result: ConversionResult) -> some View {
+        if let image = images[result.id] {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .listRowInsets(EdgeInsets())
+                .accessibilityLabel("Developed photo of \(result.sourceFilename)")
+        } else if attempted.contains(result.id) {
+            Label("This photo can't be previewed here. Save or share it to see it.", systemImage: "photo")
+                .font(.footnote)
+                .foregroundStyle(Theme.ink2)
+        } else {
+            ProgressView()
+                .frame(maxWidth: .infinity, minHeight: 160)
+                .accessibilityLabel("Loading the photo")
+        }
     }
 
     @ViewBuilder
@@ -169,6 +197,7 @@ struct KitchenResultView: View {
     /// One result at a time: read its bytes, decode the proxy off the main actor, drop the bytes.
     private func loadImages() async {
         for result in successes where images[result.id] == nil {
+            defer { attempted.insert(result.id) }
             guard let jpeg = try? await CookStore.developedJPEG(for: result, in: modelContext) else { continue }
             let proxy = await Task.detached(priority: .userInitiated) {
                 FrameRenderer.proxy(from: jpeg, maxLongEdge: Self.proxyLongEdge)
@@ -184,7 +213,9 @@ struct KitchenResultView: View {
             do {
                 guard let jpeg = try await CookStore.developedJPEG(for: result, in: modelContext) else { return }
                 // Save the original developed JPEG bytes so EXIF (camera, exposure, capture date…) is kept.
-                saver.save(data: jpeg) { saveMessage = ImageSaver.message(for: $0) }
+                saver.save(data: jpeg) { error in
+                    if let error { saveMessage = ImageSaver.message(for: error) } else { savedConfirmation = "Saved to Photos" }
+                }
             } catch {
                 saveMessage = ImageSaver.message(for: error)
             }
