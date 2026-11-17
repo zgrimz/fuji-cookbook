@@ -10,6 +10,7 @@ These documents aren't all the same kind of thing, so each row says which kind i
 | Doc | Kind | Covers |
 |---|---|---|
 | [recipe-json-format.md](recipe-json-format.md) | Reference | The `.fujirecipe` file format: envelope, recipe, settings payload, chapters. People already hold exported files in this shape, so it's a compatibility contract. |
+| [recipe-text-import.md](recipe-text-import.md) | Reference | Import from Text: the line shapes, key spellings and value forms the reader accepts, and where text it can't place goes. |
 | [fuji-recipe-ptp-protocol.md](fuji-recipe-ptp-protocol.md) | Reference | How the app uses the Fujifilm PTP vendor protocol: the push and restore sequences, what the app writes and withholds, what it says about each refusal, and how the Kitchen drives the `0xD185` RAW-conversion profile. The protocol itself is recorded once, in the published [Fujifilm PTP reference](https://github.com/zgrimz/fujifilm-ptp-reference), which this document links to for every fact. |
 | [supported-cameras.md](supported-cameras.md) | Reference | Which bodies the app reads, writes and develops on, how firmly each one is known, and the Fujifilm manuals and toning sources behind what the protocol record leaves out. |
 | [camera-identification.md](camera-identification.md) | Reference | How a USB product name resolves to a camera model, the confidence tiers, and how each tier and the connect's slot read decide whether the app writes. |

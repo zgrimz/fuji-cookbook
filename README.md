@@ -20,7 +20,8 @@ iPhone and iPad, with no account, ads or subscription.
 
 ## Features
 
-- **Find recipes anywhere.** Type one in, import a [`.fujirecipe`](docs/recipe-json-format.md)
+- **Find recipes anywhere.** Type one in, paste one from a blog or forum post
+  ([how text is read](docs/recipe-text-import.md)), import a [`.fujirecipe`](docs/recipe-json-format.md)
   file, read one out of a SOOC JPEG, or pull what's already in your camera's custom slots.
 - **Keep a library.** Group recipes into **Chapters** for a trip or a mood, favorite and search
   them, and see which cameras run each one as written. Works offline, with optional iCloud sync.

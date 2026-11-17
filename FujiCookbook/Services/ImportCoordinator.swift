@@ -15,8 +15,8 @@ struct PendingImport: Identifiable {
 }
 
 /// Turns incoming recipes into a review: files opened from Files, Mail, Messages or the share sheet,
-/// and screenshots the Share Extension queued. A file that fails preparation surfaces an error and
-/// imports nothing.
+/// screenshots the Share Extension queued, and recipes pasted as text. A file that fails preparation
+/// surfaces an error and imports nothing.
 @MainActor
 @Observable
 final class ImportCoordinator {
@@ -185,5 +185,49 @@ final class ImportCoordinator {
         } else if let lastError {
             importError = lastError
         }
+    }
+}
+
+// MARK: - Pasted text
+
+/// A recipe read from pasted text that passed the checks a file import makes. Only
+/// ``ImportCoordinator/readPastedText(_:)`` makes one, so ``ImportCoordinator/review(_:)`` is never
+/// handed an unchecked recipe.
+struct PastedRecipe {
+    let recipe: PortableRecipe
+
+    fileprivate init(recipe: PortableRecipe) {
+        self.recipe = recipe
+    }
+}
+
+extension ImportCoordinator {
+    static let pastedTextSourceName = "Pasted Text"
+
+    /// Reads a recipe out of pasted text and checks it the way a file import is checked. Throws
+    /// `RecipeTextParseError` when the text holds no recipe or a number import refuses. Opens
+    /// nothing, so the caller can show the error beside the text.
+    nonisolated static func readPastedText(_ text: String) throws -> PastedRecipe {
+        let recipe = try RecipeTextParser.parse(text)
+        do {
+            try RecipeImportValidation.validate(.single(recipe), limits: .standard)
+        } catch RecipeFileError.unsafeNumber(_, let field) {
+            throw RecipeTextParseError.unsafeNumber(field: field)
+        }
+        return PastedRecipe(recipe: recipe)
+    }
+
+    /// Opens the review for a recipe read from pasted text, in place of a file still being
+    /// prepared. A review already open is left alone and the paste is refused with an error, as a
+    /// shared screenshot's scan is held back (``processSharedScreenshots(using:)``).
+    func review(_ pasted: PastedRecipe) {
+        guard pendingImport == nil, !isScanningSharedScreenshots else {
+            importError = "Another import is waiting for review. Finish it, then paste the recipe again."
+            return
+        }
+        cancelImport()
+        importError = nil
+        pendingImport = PendingImport(recipes: [pasted.recipe], chapters: [],
+                                      sourceName: Self.pastedTextSourceName)
     }
 }

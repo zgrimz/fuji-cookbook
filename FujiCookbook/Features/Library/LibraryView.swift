@@ -41,6 +41,9 @@ struct LibraryView: View {
 
     @State private var editTarget: Identified<Recipe>?
     @State private var showingImporter = false
+    @State private var showingTextImport = false
+    /// Held until the text sheet has gone, so the review sheet isn't presented over it.
+    @State private var pastedRecipe: PastedRecipe?
     @State private var shareItem: ShareItem?
     @State private var exportError: String?
     @State private var pendingExport: PendingExport?
@@ -127,6 +130,9 @@ struct LibraryView: View {
                 for url in urls { importCoordinator.load(url: url) }
             }
             .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showingTextImport, onDismiss: reviewPastedRecipe) {
+            RecipeTextImportView { pastedRecipe = $0 }
         }
         .sheet(item: $shareItem) { item in
             ShareSheet(items: item.urls)
@@ -297,11 +303,12 @@ struct LibraryView: View {
         ContentUnavailableView {
             Label("No Recipes Yet", systemImage: "tray")
         } description: {
-            Text("Create a recipe, import a .fujirecipe file, or read recipes from your camera. Or add \(StarterRecipe.name), a recipe by the app's creator.")
+            Text("Create a recipe, import a .fujirecipe file, paste one as text, or read recipes from your camera. Or add \(StarterRecipe.name), a recipe by the app's creator.")
         } actions: {
             Button("New Recipe") { createRecipe() }
                 .buttonStyle(.borderedProminent)
             Button("Import from File") { showingImporter = true }
+            Button("Import from Text") { showingTextImport = true }
             Button("Add \(StarterRecipe.name)") { addStarterRecipe() }
                 .disabled(isAddingStarter)
         }
@@ -327,6 +334,7 @@ struct LibraryView: View {
             Menu {
                 Button { createRecipe() } label: { Label("New Recipe", systemImage: "plus") }
                 Button { showingImporter = true } label: { Label("Import from File", systemImage: "square.and.arrow.down") }
+                Button { showingTextImport = true } label: { Label("Import from Text", systemImage: "doc.on.clipboard") }
                 Button { startScan() } label: { Label("Scan Screenshot (AI)", systemImage: "text.viewfinder") }
             } label: {
                 Image(systemName: "plus")
@@ -340,6 +348,12 @@ struct LibraryView: View {
         let recipe = Recipe(name: "New Recipe")
         modelContext.insert(recipe)
         editTarget = Identified(value: recipe)
+    }
+
+    private func reviewPastedRecipe() {
+        guard let pasted = pastedRecipe else { return }
+        pastedRecipe = nil
+        importCoordinator.review(pasted)
     }
 
     /// Disabled while it runs, so a second tap doesn't decode the bundled file and its photos again.
