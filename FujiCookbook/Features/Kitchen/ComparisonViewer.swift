@@ -76,6 +76,11 @@ struct ComparisonViewer: View {
         // otherwise sits on top of the caption and clips the last tile.
         .toolbar(.hidden, for: .tabBar)
         .toolbar { toolbarContent }
+        // Colour is judged against the black surround in either appearance, so the chrome on it is
+        // dark too: in light mode the caption and pair chips would be light material over black.
+        // Applied before the sheets, so the diagnostics sheet and alerts keep the app's appearance.
+        .environment(\.colorScheme, .dark)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .task(id: photo.uuid) { await prepare() }
         .sheet(isPresented: $showDiagnostics) { diagnosticsSheet }
         .photoExportPresentation(share: $shareItem, message: $saveMessage)

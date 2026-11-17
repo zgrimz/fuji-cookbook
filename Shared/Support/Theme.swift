@@ -422,6 +422,13 @@ extension View {
             .scrollContentBackground(.hidden)
             .background(Theme.paper)
     }
+
+    /// Puts the rows of a `Section`, a `ForEach` or a single row on the `Theme.card` surface. The
+    /// system's grouped cell is a cool grey that barely separates from the warm dark-mode paper and
+    /// doesn't match the app's cards. A row that sets its own background keeps it.
+    func cardRowBackground() -> some View {
+        listRowBackground(Theme.card)
+    }
 }
 
 /// Left-aligned wrapping layout for parameter chips.

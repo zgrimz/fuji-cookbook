@@ -40,6 +40,7 @@ struct KitchenResultView: View {
         List {
             if successes.isEmpty && failures.isEmpty {
                 ContentUnavailableView("Nothing developed", systemImage: "frying.pan")
+                    .cardRowBackground()
             }
 
             ForEach(successes) { result in
@@ -91,6 +92,7 @@ struct KitchenResultView: View {
                     Text(resultLabels[result.id].map { "\($0) · \(result.outputFilename)" } ?? result.outputFilename)
                 }
             }
+            .cardRowBackground()
 
             if !successes.isEmpty {
                 Section {
@@ -108,6 +110,7 @@ struct KitchenResultView: View {
                          ? "Saving to Recent Results failed. A recovery copy is kept in the app's Recovered Develops folder. You can save or export it above."
                          : "Kept in Recent Results in the Kitchen — closing this doesn't discard them.")
                 }
+                .cardRowBackground()
             }
 
             if !failures.isEmpty {
@@ -135,6 +138,7 @@ struct KitchenResultView: View {
                         ReportProblemRow(prompt: ReportProblemRow.kitchenPrompt)
                     }
                 }
+                .cardRowBackground()
             }
         }
         .scrollContentBackground(.hidden)

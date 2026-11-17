@@ -65,10 +65,11 @@ struct TestKitchenView: View {
                               notConnectedMessage: guided == nil
                                   ? "Comparing develops each version on the camera itself. Pick your files and recipes now, then connect a camera to develop."
                                   : "Choose your RAW file, then reconnect the test camera to create the comparison photos.")
-            filesSection
-            recipesSection
-            cookSection
-            diagnosticsSection
+                .cardRowBackground()
+            filesSection.cardRowBackground()
+            recipesSection.cardRowBackground()
+            cookSection.cardRowBackground()
+            diagnosticsSection.cardRowBackground()
         }
         .paperBackground()
         .navigationTitle("Test Kitchen")

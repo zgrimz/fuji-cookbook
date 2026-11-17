@@ -43,12 +43,14 @@ struct SavedComparisonsView: View {
             if photos.isEmpty {
                 ContentUnavailableView("No Results Yet", systemImage: "photo.stack",
                                        description: Text("Photos you develop in the Kitchen are kept here."))
+                    .cardRowBackground()
             } else if scopedToBatch {
-                Section { rows(photos) }
+                Section { rows(photos) }.cardRowBackground()
             } else {
                 ForEach(batches) { batch in
                     Section(batch.title) { rows(batch.photos) }
                 }
+                .cardRowBackground()
             }
         }
         .scrollContentBackground(.hidden)

@@ -80,15 +80,16 @@ struct DevelopView: View {
                                   ? "Developing happens on the camera itself. Pick your files and recipe now, then connect a camera to develop."
                                   : "Choose your RAW file, then reconnect the test camera to develop it.",
                               onShowGuide: { showGuide = true })
+                .cardRowBackground()
             // Connected to a body that can't convert: no workspace, since nothing here could be developed.
             // Otherwise show it either way — connected and ready, or not connected yet, so files and
             // a recipe can be staged before plugging in. The cook action itself gates on the camera.
             if !(camera.session.isConnected && !camera.session.canConvert) {
-                filesSection
-                recipeSection
-                cookSection
+                filesSection.cardRowBackground()
+                recipeSection.cardRowBackground()
+                cookSection.cardRowBackground()
             }
-            helpSection
+            helpSection.cardRowBackground()
         }
         .paperBackground()
         .navigationTitle("Develop")
