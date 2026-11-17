@@ -35,7 +35,11 @@ enum Theme {
     /// Soft accent fill (filled slot badges, selected states).
     static let accentSoft = dynamic(light: 0xE4EFE6, dark: 0x24382C)
     /// The Kitchen's "cook" amber.
-    static let amber = dynamic(light: 0xB87A33, dark: 0xD2954C)
+    static let amber = dynamic(light: 0xA16B2D, dark: 0xD2954C)
+    /// Text and symbols on an `amber` fill, as `onAccent` is for accent: white on the light amber,
+    /// which measures about 4.5:1, and dark on the dark-mode amber, where white measures about 2.6:1
+    /// and this about 6.8:1.
+    static let onAmber = dynamic(light: 0xFFFFFF, dark: 0x1C1914)
     /// Soft amber fill.
     static let amberSoft = dynamic(light: 0xF3E7D2, dark: 0x3C2F1D)
     /// Favorite star.

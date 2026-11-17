@@ -292,7 +292,7 @@ struct CookButton: View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(.headline)
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.onAmber)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
                 .background(Theme.amber, in: RoundedRectangle(cornerRadius: 14, style: .continuous))

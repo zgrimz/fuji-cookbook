@@ -157,7 +157,7 @@ struct FrameAndFitView: View {
                 } label: {
                     Label(isLoading ? "Loading…" : "Choose Photos", systemImage: "photo")
                         .font(.headline)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onAmber)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
                         .background(Theme.amber, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -403,7 +403,7 @@ struct FrameAndFitView: View {
                     Label(options.tiles > 1 ? "Save \(options.tiles) Images" : "Save to Photos",
                           systemImage: "checkmark")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onAmber)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(Theme.amber, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
