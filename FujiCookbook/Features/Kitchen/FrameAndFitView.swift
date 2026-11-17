@@ -69,6 +69,7 @@ struct FrameAndFitView: View {
     @Query(Recipe.listFetch(sortBy: [SortDescriptor(\Recipe.updatedAt, order: .reverse)])) private var recipes: [Recipe]
     @Query private var chapters: [Chapter]
     @Environment(AppRouter.self) private var router
+    @Environment(\.modelContext) private var modelContext
 
     @State private var sources: [Source] = []
     @State private var options = FrameOptions()
@@ -130,6 +131,7 @@ struct FrameAndFitView: View {
             Task { await load(items, intent: intent) }
         }
         .photoExportPresentation(share: $shareItem, message: $message, title: "Frame & Fit")
+        .onAppear(perform: applyPhotoSeed)
     }
 
     /// The picker caps at what will still fit, so the user can't select more than the frame holds
@@ -424,8 +426,33 @@ struct FrameAndFitView: View {
     private func applySeed() {
         guard let seed = router.frameSeed else { return }
         router.frameSeed = nil
-        card.recipeUUID = seed.recipeUUID
-        controlTab = .card
+        if let recipeUUID = seed.recipeUUID {
+            card.recipeUUID = recipeUUID
+            controlTab = .card
+        }
+    }
+
+    /// Takes the developed photo out of a seed and starts the frame from it. Runs when the screen
+    /// appears, because the editor that applies the rest of the seed only exists once there is a
+    /// photo; the recipe stays in the seed for it.
+    private func applyPhotoSeed() {
+        guard let versionID = router.frameSeed?.developedVersionID else { return }
+        router.frameSeed?.developedVersionID = nil
+        Task { await startFromDeveloped(versionID) }
+    }
+
+    /// Starts the frame from a developed photo's original JPEG, as a pick of one photo would.
+    @MainActor
+    private func startFromDeveloped(_ versionID: UUID) async {
+        isLoading = true
+        defer { isLoading = false }
+        let loader = DevelopedImageLoader(modelContainer: modelContext.container)
+        guard let data = await loader.jpeg(for: versionID), let source = await makeSource(data) else {
+            message = "That photo couldn't be opened."
+            return
+        }
+        sources = [source]
+        options.arrangement = FrameArrangement.best(for: [source.slot.size])
     }
 
     /// When the card's recipe last changed, so an edit made elsewhere still redraws the card.
@@ -1003,6 +1030,10 @@ struct FrameAndFitView: View {
 
     private func makeSource(_ item: PhotosPickerItem) async -> Source? {
         guard let data = try? await item.loadTransferable(type: Data.self) else { return nil }
+        return await makeSource(data)
+    }
+
+    private func makeSource(_ data: Data) async -> Source? {
         // Proxy generation decodes the file; keep it off the main actor so the picker dismisses cleanly.
         let prepared = await Task.detached(priority: .userInitiated) { () -> (UIImage, CGSize)? in
             guard let proxy = FrameRenderer.proxy(from: data) else { return nil }

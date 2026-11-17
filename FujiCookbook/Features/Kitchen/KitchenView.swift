@@ -84,9 +84,13 @@ struct KitchenView: View {
             .onAppear {
                 cookedCount = try? modelContext.fetchCount(FetchDescriptor<CookedPhoto>())
                 if router.frameSeed != nil { openFrameAndFit() }
+                if router.developSeed != nil { openDevelop() }
             }
             .onChange(of: router.frameSeed) { _, seed in
                 if seed != nil { openFrameAndFit() }
+            }
+            .onChange(of: router.developSeed) { _, seed in
+                if seed != nil { openDevelop() }
             }
         }
     }
@@ -97,6 +101,12 @@ struct KitchenView: View {
     private func openFrameAndFit() {
         guard path.last != .frameAndFit else { return }
         path = [.frameAndFit]
+    }
+
+    /// Land on Develop, replacing whatever the hub was showing above it. `DevelopView` applies the
+    /// seed when it appears, which includes being popped back to.
+    private func openDevelop() {
+        path = [.develop]
     }
 
     private func zone<Content: View>(_ title: String,

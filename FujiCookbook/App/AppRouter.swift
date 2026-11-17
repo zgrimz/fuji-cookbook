@@ -34,10 +34,21 @@ struct IdeaSeed: Equatable {
 }
 
 /// A pre-filled request for Frame & Fit. The recipe screen hands the Kitchen a recipe to build a
-/// share card from, the same way `IdeaSeed` hands the Ideas tab a starting point; `FrameAndFitView`
-/// applies it once and clears it.
+/// share card from, and the Kitchen's viewer a developed photo with the recipe that made it, the
+/// same way `IdeaSeed` hands the Ideas tab a starting point; `FrameAndFitView` applies it once and
+/// clears it.
 struct FrameSeed: Equatable {
-    /// The recipe the card should start on.
+    /// The recipe the card should start on; nil starts without a card.
+    var recipeUUID: UUID?
+    /// The developed version (`CookedVersion.uuid`) to start the frame from; nil leaves the photos
+    /// to be picked.
+    var developedVersionID: UUID?
+}
+
+/// A pre-filled request for Develop: the Library recipe to start on. The Kitchen's viewer hands it
+/// over for a Test Kitchen preview worth developing at full resolution; `DevelopView` applies it
+/// once and clears it. The RAW file isn't kept after a develop, so it is picked again.
+struct DevelopSeed: Equatable {
     var recipeUUID: UUID
 }
 
@@ -55,4 +66,8 @@ final class AppRouter {
     /// A pending pre-filled Frame & Fit request. Set alongside `selectedTab = .kitchen`; Frame & Fit
     /// consumes it once and sets it back to nil.
     var frameSeed: FrameSeed?
+
+    /// A pending pre-filled Develop request. Set alongside `selectedTab = .kitchen`; Develop
+    /// consumes it once and sets it back to nil.
+    var developSeed: DevelopSeed?
 }

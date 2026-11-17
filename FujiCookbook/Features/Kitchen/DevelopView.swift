@@ -25,6 +25,7 @@ struct DevelopView: View {
     var guided: GuidedKitchenConfiguration?
 
     @Environment(CameraServices.self) private var camera
+    @Environment(AppRouter.self) private var router
     @Environment(\.modelContext) private var modelContext
     @Query(Recipe.listFetch(sortBy: [SortDescriptor(\Recipe.name)])) private var recipes: [Recipe]
 
@@ -135,6 +136,15 @@ struct DevelopView: View {
         }
         .cookFailureAlert($failure)
         .seedingGuidedFiles(guided, into: $pickedRAFs)
+        .onAppear(perform: applySeed)
+    }
+
+    /// Starts on the recipe the Kitchen's viewer handed over. Only the standalone screen takes it: a
+    /// Camera Test step brings its own recipe.
+    private func applySeed() {
+        guard presentation == .standalone, guided == nil, let seed = router.developSeed else { return }
+        router.developSeed = nil
+        selectedRef = .library(seed.recipeUUID)
     }
 
     // MARK: Sections

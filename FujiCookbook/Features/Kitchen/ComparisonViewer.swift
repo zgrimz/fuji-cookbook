@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 import UIKit
 
@@ -17,6 +18,10 @@ struct ComparisonViewer: View {
     var initialVersionID: UUID?
 
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(AppRouter.self) private var router
+    @Query(Recipe.listFetch(sortBy: [SortDescriptor(\Recipe.name)])) private var recipes: [Recipe]
+    /// The Library recipe Open Recipe is showing.
+    @State private var openedRecipe: Recipe?
 
     @State private var mode: ComparisonMode = .swipe
     @State private var selection: Int = 0
@@ -86,6 +91,16 @@ struct ComparisonViewer: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task(id: photo.uuid) { await prepare() }
         .sheet(isPresented: $showDiagnostics) { diagnosticsSheet }
+        .sheet(item: $openedRecipe) { recipe in
+            NavigationStack {
+                RecipeDetailView(recipe: recipe)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { openedRecipe = nil }
+                        }
+                    }
+            }
+        }
         .photoExportPresentation(share: $shareItem, message: $saveMessage)
         .confirmationToast($savedConfirmation)
     }
@@ -188,6 +203,49 @@ struct ComparisonViewer: View {
             }
             versionAction(systemImage: "square.and.arrow.up", verb: "Share", action: share)
             versionAction(systemImage: "square.and.arrow.down", verb: "Save", action: save)
+            moreMenu
+        }
+    }
+
+    /// Where a version leads next: the recipe that made it, a share card of it, and for a
+    /// comparison preview, the full-resolution develop the preview was for. In Swipe it acts on the
+    /// version on screen; in A|B and Tiled each version gets its own section.
+    @ViewBuilder
+    private var moreMenu: some View {
+        let targets = mode == .swipe ? [current].compactMap { $0 } : versions
+        if !targets.isEmpty {
+            Menu {
+                if targets.count == 1, let version = targets.first {
+                    nextActions(for: version)
+                } else {
+                    ForEach(targets) { version in
+                        Section(version.recipeName) { nextActions(for: version) }
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .accessibilityLabel("More")
+        }
+    }
+
+    @ViewBuilder
+    private func nextActions(for version: VersionSnapshot) -> some View {
+        let recipe = recipes.uniqueRecipe(named: version.recipeName)
+        if let recipe {
+            Button("Open Recipe", systemImage: "book") { openedRecipe = recipe }
+        }
+        if version.hasImage {
+            Button("Make Share Card", systemImage: "square.on.square.dashed") {
+                router.frameSeed = FrameSeed(recipeUUID: recipe?.uuid, developedVersionID: version.id)
+                router.selectedTab = .kitchen
+            }
+        }
+        if version.isComparisonPreview, let recipe {
+            Button("Develop at Full Resolution…", systemImage: "wand.and.stars") {
+                router.developSeed = DevelopSeed(recipeUUID: recipe.uuid)
+                router.selectedTab = .kitchen
+            }
         }
     }
 
