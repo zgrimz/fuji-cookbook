@@ -3,7 +3,7 @@ import UIKit
 
 /// The app-wide design system: warm paper surfaces, a serif for recipe names (the cookbook
 /// metaphor), a deep green accent, and amber for the Kitchen's "cook" actions. Every palette color
-/// but `warning` has its own light and dark value.
+/// has its own light and dark value.
 enum Theme {
 
     // MARK: Palette
@@ -41,9 +41,11 @@ enum Theme {
     /// Favorite star.
     static let star = amber
     /// Caution: what the app couldn't read, write, verify or finish, and a field that doesn't
-    /// match the one it is compared with. The palette's warning orange, one value in both modes.
-    /// Amber stays the Kitchen's cook actions and the star, so a caution never reads as a button.
-    static let warning = Color(UIColor(rgb: 0xE08C34))
+    /// match the one it is compared with. The palette's warning orange, deepened in light mode:
+    /// the dark-mode orange there measures about 2.3:1 on paper, under the 4.5:1 caption text needs;
+    /// this measures 4.5:1 or more on paper, paper2 and card. Amber stays the Kitchen's cook actions
+    /// and the star, so a caution never reads as a button.
+    static let warning = dynamic(light: 0x985917, dark: 0xE08C34)
     /// The fill behind a warning card or badge, as soft green and soft amber are for theirs.
     static let warningSoft = warning.opacity(0.12)
 
