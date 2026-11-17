@@ -16,12 +16,17 @@ enum Theme {
     static let card = dynamic(light: 0xFFFFFF, dark: 0x2E2921)
     /// Primary text.
     static let ink = dynamic(light: 0x201D17, dark: 0xF0EADC)
-    /// Secondary text.
-    static let ink2 = dynamic(light: 0x6E675A, dark: 0xB3AA97)
-    /// Tertiary text / disabled.
-    static let ink3 = dynamic(light: 0xA49C8A, dark: 0x7D7565)
-    /// Hairlines and card borders.
-    static let line = dynamic(light: 0xE7DFCF, dark: 0x3B342A)
+    /// Secondary text. Under Increase Contrast, 7:1 or more on paper, paper2 and card.
+    static let ink2 = dynamic(light: 0x6E675A, dark: 0xB3AA97,
+                              increasedContrast: (light: 0x514B42, dark: 0xBCB4A3))
+    /// Tertiary text / disabled. Under Increase Contrast, 4.5:1 or more on paper, paper2 and card,
+    /// where the normal value measures as little as 2.2:1 in light mode and 3.2:1 in dark. In light
+    /// mode the high-contrast value sits close to `ink2`.
+    static let ink3 = dynamic(light: 0xA49C8A, dark: 0x7D7565,
+                              increasedContrast: (light: 0x706857, dark: 0x978F7F))
+    /// Hairlines and card borders. Under Increase Contrast, about 1.5:1 against card.
+    static let line = dynamic(light: 0xE7DFCF, dark: 0x3B342A,
+                              increasedContrast: (light: 0xDDD1BB, dark: 0x4D4437))
     /// Primary accent — deep cookbook green.
     static let accent = dynamic(light: 0x2E6B4A, dark: 0x76BC93)
     /// Text and symbols on an `accent` fill. White on the light green, dark on the dark-mode green,
@@ -123,9 +128,16 @@ enum Theme {
         UINavigationBar.appearance().scrollEdgeAppearance = scrollEdge
     }
 
-    private static func dynamic(light: UInt32, dark: UInt32) -> Color {
+    /// A color resolved from the appearance, and from Settings ▸ Accessibility ▸ Increase Contrast
+    /// where `increasedContrast` supplies values for it.
+    private static func dynamic(light: UInt32, dark: UInt32,
+                                increasedContrast: (light: UInt32, dark: UInt32)? = nil) -> Color {
         Color(UIColor { traits in
-            UIColor(rgb: traits.userInterfaceStyle == .dark ? dark : light)
+            let isDark = traits.userInterfaceStyle == .dark
+            if traits.accessibilityContrast == .high, let increasedContrast {
+                return UIColor(rgb: isDark ? increasedContrast.dark : increasedContrast.light)
+            }
+            return UIColor(rgb: isDark ? dark : light)
         })
     }
 }
