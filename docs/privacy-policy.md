@@ -1,8 +1,8 @@
 # **Fuji Cookbook Privacy Policy**
 
-**Effective date:** October 20, 2026
+**Effective date:** November 16, 2026
 
-**Version 2.0**
+**Version 2.1**
 
 Fuji Cookbook is an iOS app for organizing and importing Fujifilm recipes, testing them on your own RAW files, and pushing your favorites straight to your camera. The app is listed on the App Store as “The Fuji Cookbook” and appears on your device as “Fuji Cookbook”; this policy calls it Fuji Cookbook throughout.
 
