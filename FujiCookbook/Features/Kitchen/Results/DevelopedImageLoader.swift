@@ -22,6 +22,12 @@ actor DevelopedImageLoader {
         return image
     }
 
+    /// The display copy `image(for:maxLongEdge:)` last made at this size, if it is still cached;
+    /// cheap enough to call while rendering, so a revisited card can draw sharp at once.
+    nonisolated static func cachedImage(for versionID: UUID, maxLongEdge: CGFloat) -> UIImage? {
+        DevelopedImageCache.image(for: versionID, maxLongEdge: maxLongEdge)
+    }
+
     /// The version's developed JPEG bytes as the camera returned them, EXIF included, or nil when
     /// the store holds none for it.
     func jpeg(for versionID: UUID) -> Data? {
@@ -33,25 +39,28 @@ actor DevelopedImageLoader {
 }
 
 /// Decoded display copies, keyed by version and size. Versions are immutable once stored, so a
-/// uuid-keyed cache never goes stale. Costed in bytes so memory pressure, not a count, decides
-/// how many stay.
+/// uuid-keyed cache never goes stale. Costed in bytes, and kept while the app is in the background
+/// (`NSCache` empties then, and every return to Recent Results decoded every card again); a memory
+/// warning empties it.
 private enum DevelopedImageCache {
-    private static let cache: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
-        cache.totalCostLimit = 96 * 1024 * 1024
+    private static let cache: CostBoundedCache<String, UIImage> = {
+        let cache = CostBoundedCache<String, UIImage>(costLimit: 96 * 1024 * 1024)
+        // The observer lives as long as the process, as the cache does; nothing removes it.
+        NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification,
+                                               object: nil, queue: nil) { _ in cache.removeAll() }
         return cache
     }()
 
     static func image(for id: UUID, maxLongEdge: CGFloat) -> UIImage? {
-        cache.object(forKey: key(id, maxLongEdge))
+        cache.value(for: key(id, maxLongEdge))
     }
 
     static func store(_ image: UIImage, for id: UUID, maxLongEdge: CGFloat) {
         let pixels = image.size.width * image.scale * image.size.height * image.scale
-        cache.setObject(image, forKey: key(id, maxLongEdge), cost: Int(pixels) * 4)
+        cache.insert(image, for: key(id, maxLongEdge), cost: Int(pixels) * 4)
     }
 
-    private static func key(_ id: UUID, _ maxLongEdge: CGFloat) -> NSString {
-        "\(id.uuidString)-\(Int(maxLongEdge))" as NSString
+    private static func key(_ id: UUID, _ maxLongEdge: CGFloat) -> String {
+        "\(id.uuidString)-\(Int(maxLongEdge))"
     }
 }

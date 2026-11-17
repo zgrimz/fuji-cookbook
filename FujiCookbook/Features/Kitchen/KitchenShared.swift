@@ -176,7 +176,7 @@ struct ChosenRecipeRow: View {
             FilmSwatch(simulation: filmSimulation, size: 12)
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
-                    .font(Theme.serif(16))
+                    .font(Theme.serif(.callout))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
                 Text(filmSimulation?.displayName ?? "No film simulation set")
@@ -824,8 +824,8 @@ enum CookStore {
     /// neither holds it. Read on demand and let go, so a sheet listing a batch of full-resolution
     /// develops holds none of their bytes.
     ///
-    /// `imageData` is read on the main actor the way `ComparisonImageStore` reads it: a model's
-    /// attributes are the main context's to touch.
+    /// `imageData` is read through the main context, so the read is on the main actor, one photo
+    /// at a time as the sheet asks. The results screens read through `DevelopedImageLoader`, off it.
     static func developedJPEG(for result: ConversionResult, in context: ModelContext) async throws -> Data? {
         let id = result.id
         var saved = FetchDescriptor<CookedVersion>(predicate: #Predicate { $0.uuid == id })

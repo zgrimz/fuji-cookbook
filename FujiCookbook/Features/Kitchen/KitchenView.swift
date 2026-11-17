@@ -264,7 +264,7 @@ private struct PathwayRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(nested ? .subheadline.weight(.semibold) : Theme.serif(19))
+                    .font(nested ? .subheadline.weight(.semibold) : Theme.serif(.title3))
                     .foregroundStyle(Theme.ink)
                 Text(subtitle)
                     .font(nested ? .caption : .subheadline)
@@ -334,7 +334,7 @@ private struct ToolTile: View {
                 }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(Theme.serif(17))
+                    .font(Theme.serif(.headline))
                     .foregroundStyle(Theme.ink)
                 Text(subtitle)
                     .font(.caption)

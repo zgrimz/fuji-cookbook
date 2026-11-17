@@ -19,6 +19,7 @@ struct ComparisonViewer: View {
 
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(AppRouter.self) private var router
+    @Environment(\.modelContext) private var modelContext
     @Query(Recipe.listFetch(sortBy: [SortDescriptor(\Recipe.name)])) private var recipes: [Recipe]
     /// The Library recipe Open Recipe is showing.
     @State private var openedRecipe: Recipe?
@@ -47,6 +48,9 @@ struct ComparisonViewer: View {
     /// Gates the raw D185 profile dump — see `DiagnosticMode`.
     @AppStorage(DiagnosticMode.key) private var diagnosticMode = false
     @State private var showDiagnostics = false
+    /// Whether the card listing what the develop adjusted is open over the photo.
+    @State private var showingAdjustments = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The profile report to show: the version on screen in swipe mode, else the first one that has
     /// it (in A|B and Tiled there's no single "current" version).
@@ -74,9 +78,12 @@ struct ComparisonViewer: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .bottom) { adjustmentsCard }
 
-            captionBar
+            bottomPanel
         }
+        .onChange(of: selection) { showingAdjustments = false }
+        .onChange(of: mode) { showingAdjustments = false }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle(filename)
         .navigationBarTitleDisplayMode(.inline)
@@ -109,9 +116,13 @@ struct ComparisonViewer: View {
     @State private var saveMessage: String?
     @State private var savedConfirmation: String?
     @State private var shareItem: ShareItem?
+    /// Reads developed JPEGs off the main actor, for the panes and for Save and Share.
+    @State private var loader: DevelopedImageLoader?
 
     /// The one place that reads the model. Everything else works off `versions`.
     private func prepare() async {
+        let loader = self.loader ?? DevelopedImageLoader(modelContainer: modelContext.container)
+        self.loader = loader
         let models = photo.sortedVersions
         filename = photo.sourceFilename
         versions = models.map(VersionSnapshot.init)
@@ -120,7 +131,7 @@ struct ComparisonViewer: View {
         }
         if pair.b >= models.count { pair = (0, min(1, max(0, models.count - 1))) }
         store.prime(models)
-        await store.load(models)
+        await store.load(versions.map(\.id), with: loader)
     }
 
     // MARK: Modes
@@ -128,7 +139,7 @@ struct ComparisonViewer: View {
     private var swipeBody: some View {
         TabView(selection: $selection) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                ComparisonPane(image: item.image, transform: $transform)
+                ComparisonPane(image: item.image, transform: $transform, accessibilityName: item.label)
                     .tag(index)
             }
         }
@@ -187,15 +198,6 @@ struct ComparisonViewer: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        if hasChoice {
-            ToolbarItem(placement: .principal) {
-                Picker("View", selection: $mode) {
-                    ForEach(ComparisonMode.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 220)
-            }
-        }
         ToolbarItemGroup(placement: .topBarTrailing) {
             if diagnosticMode, diagnosticsText != nil {
                 Button { showDiagnostics = true } label: { Image(systemName: "stethoscope") }
@@ -235,7 +237,7 @@ struct ComparisonViewer: View {
         if let recipe {
             Button("Open Recipe", systemImage: "book") { openedRecipe = recipe }
         }
-        if version.hasImage {
+        if store.isAvailable(version.id) {
             Button("Make Share Card", systemImage: "square.on.square.dashed") {
                 router.frameSeed = FrameSeed(recipeUUID: recipe?.uuid, developedVersionID: version.id)
                 router.selectedTab = .kitchen
@@ -278,9 +280,9 @@ struct ComparisonViewer: View {
     private func versionAction(systemImage: String,
                                verb: String,
                                action: @escaping (VersionSnapshot) -> Void) -> some View {
-        let usable = versions.filter(\.hasImage)
+        let usable = versions.filter { store.isAvailable($0.id) }
         if mode == .swipe || usable.count <= 1 {
-            if let current, current.hasImage {
+            if let current, store.isAvailable(current.id) {
                 Button { action(current) } label: { Image(systemName: systemImage) }
                     .accessibilityLabel("\(verb) \(current.recipeName)")
             }
@@ -296,13 +298,34 @@ struct ComparisonViewer: View {
         }
     }
 
+    /// The caption, then the mode picker. The picker lives down here rather than in the navigation
+    /// bar: beside the back button and three actions, a 393-point-wide iPhone truncates its labels.
+    private var bottomPanel: some View {
+        VStack(spacing: 12) {
+            captionBar
+            if hasChoice {
+                Picker("View", selection: $mode) {
+                    ForEach(ComparisonMode.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 360)
+            }
+        }
+        .padding()
+        .background(.ultraThinMaterial)
+    }
+
     @ViewBuilder
     private var captionBar: some View {
         VStack(alignment: .leading, spacing: 3) {
             switch mode {
             case .swipe:
                 if let version = current {
-                    Text(version.recipeName).font(.headline)
+                    HStack(spacing: 8) {
+                        Text(version.recipeName).font(.headline).lineLimit(1)
+                        Spacer(minLength: 8)
+                        adjustmentsButton(for: version)
+                    }
                     detailLine(for: version, position: "\(selection + 1) of \(versions.count)")
                 }
             case .curtain:
@@ -317,28 +340,67 @@ struct ComparisonViewer: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(.ultraThinMaterial)
     }
 
-    @ViewBuilder
+    /// One line whatever the version, so the caption keeps its height and the photo above it
+    /// doesn't jump as Swipe moves between versions; what the develop adjusted opens over the photo.
     private func detailLine(for version: VersionSnapshot, position: String?) -> some View {
-        HStack(spacing: 8) {
-            if let film = version.filmSimulation { Text(film) }
-            if let position, versions.count > 1 { Text(position) }
-            if version.isComparisonPreview { Text("Comparison preview") }
+        let parts = [version.filmSimulation,
+                     versions.count > 1 ? position : nil,
+                     version.isComparisonPreview ? "Comparison preview" : nil]
+        return Text(parts.compactMap { $0 }.joined(separator: " · "))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+    }
+
+    /// Present on every version so the caption row is the same height either way, but visible and
+    /// reachable only on a version the develop adjusted.
+    private func adjustmentsButton(for version: VersionSnapshot) -> some View {
+        let adjusted = !version.adjustments.isEmpty
+        return Button {
+            withAnimation(reduceMotion ? nil : .snappy) { showingAdjustments.toggle() }
+        } label: {
+            Label("Adjusted", systemImage: showingAdjustments ? "chevron.down" : "info.circle")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tint)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.12), in: Capsule())
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        if !version.clampedFields.isEmpty {
-            Text("Adjusted before developing: \(version.clampedFields.joined(separator: ", "))")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        ForEach(version.notes, id: \.self) { note in
-            Text(note)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+        .buttonStyle(.plain)
+        .opacity(adjusted ? 1 : 0)
+        .disabled(!adjusted)
+        .accessibilityHidden(!adjusted)
+        .accessibilityLabel("Develop adjustments")
+        .accessibilityValue(showingAdjustments ? "Shown" : "Hidden")
+    }
+
+    /// What the develop changed on the recipe's behalf, over the foot of the photo rather than in
+    /// the caption, so reading it never resizes the frame being judged. Tap to close.
+    @ViewBuilder
+    private var adjustmentsCard: some View {
+        if mode == .swipe, showingAdjustments, let version = current, !version.adjustments.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Adjustments")
+                    .font(.subheadline.weight(.semibold))
+                ForEach(version.adjustments, id: \.self) { line in
+                    Text(line)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(12)
+            .contentShape(Rectangle())
+            .onTapGesture { withAnimation(reduceMotion ? nil : .snappy) { showingAdjustments = false } }
+            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isModal)
+            .accessibilityAction(named: "Close") { showingAdjustments = false }
         }
     }
 
@@ -354,11 +416,6 @@ struct ComparisonViewer: View {
 
     // MARK: Actions
 
-    /// Resolve a snapshot back to its model. Only ever called from a button, never while rendering.
-    private func model(for snapshot: VersionSnapshot) -> CookedVersion? {
-        photo.sortedVersions.first { $0.uuid == snapshot.id }
-    }
-
     private func outputFilename(_ version: VersionSnapshot) -> String {
         let base = (filename as NSString).deletingPathExtension
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
@@ -367,21 +424,33 @@ struct ComparisonViewer: View {
         return "\(base.isEmpty ? "photo" : base)-\(recipe.isEmpty ? "recipe" : recipe).jpg"
     }
 
+    /// The version's original developed JPEG, EXIF included, never the downsampled proxy the panes
+    /// draw. Nil, with the reason in the alert, when the library no longer holds it.
+    private func originalJPEG(_ version: VersionSnapshot) async -> Data? {
+        guard let data = await loader?.jpeg(for: version.id) else {
+            saveMessage = "This photo couldn't be read from the app's library."
+            return nil
+        }
+        return data
+    }
+
     private func save(_ version: VersionSnapshot) {
-        // Save the original developed JPEG bytes so EXIF (camera, exposure, capture date…) is kept —
-        // never the downsampled proxy the panes are drawn from.
-        guard let data = model(for: version)?.imageData else { return }
-        saver.save(data: data) { error in
-            if let error { saveMessage = ImageSaver.message(for: error) } else { savedConfirmation = "Saved to Photos" }
+        Task {
+            guard let data = await originalJPEG(version) else { return }
+            saver.save(data: data) { error in
+                if let error { saveMessage = ImageSaver.message(for: error) } else { savedConfirmation = "Saved to Photos" }
+            }
         }
     }
 
     private func share(_ version: VersionSnapshot) {
-        guard let data = model(for: version)?.imageData else { return }
-        do {
-            shareItem = try .temporaryFiles([(data, outputFilename(version))])
-        } catch {
-            saveMessage = ShareItem.preparationFailure(error)
+        Task {
+            guard let data = await originalJPEG(version) else { return }
+            do {
+                shareItem = try .temporaryFiles([(data, outputFilename(version))])
+            } catch {
+                saveMessage = ShareItem.preparationFailure(error)
+            }
         }
     }
 }
@@ -395,7 +464,6 @@ struct VersionSnapshot: Identifiable {
     /// What the develop decided on the recipe's behalf — see `ConversionResult.notes`.
     let notes: [String]
     let isComparisonPreview: Bool
-    let hasImage: Bool
     let diagnostics: String?
 
     init(_ version: CookedVersion) {
@@ -405,8 +473,18 @@ struct VersionSnapshot: Identifiable {
         clampedFields = version.clampedFields
         notes = version.notes
         isComparisonPreview = version.isComparisonPreview
-        hasImage = !version.imageData.isEmpty
         diagnostics = version.diagnostics
+    }
+
+    /// What the develop changed on the recipe's behalf, one line each: the fields it clamped,
+    /// then its notes. Empty when it applied the recipe as written.
+    var adjustments: [String] { Self.adjustments(clampedFields: clampedFields, notes: notes) }
+
+    static func adjustments(clampedFields: [String], notes: [String]) -> [String] {
+        let clamped = clampedFields.isEmpty
+            ? []
+            : ["Adjusted before developing: \(clampedFields.joined(separator: ", "))"]
+        return clamped + notes
     }
 }
 
@@ -427,22 +505,27 @@ enum ComparisonMode: String, CaseIterable, Identifiable {
 
 /// Decoded images for a comparison, prepared once.
 ///
-/// Decoding `UIImage(data: version.imageData)` inside `body` puts the full developed JPEG on the
-/// main actor on every body pass — survivable while exactly one is on screen, and not once three
-/// are. Each version is decoded once, off the main actor, straight to display size by ImageIO
-/// (`FrameRenderer.proxy`) rather than by materialising the full bitmap and throwing most of it
-/// away. The inline 240px thumbnail stands in until the proxy lands.
+/// Reading `version.imageData` through the main context puts the full developed JPEG's read on the
+/// main actor, and decoding it inside `body` repeats the decode on every pass. Each version is read
+/// and decoded once by `DevelopedImageLoader`, off the main actor and straight to display size.
+/// The inline 240px thumbnail stands in until the proxy lands.
 @Observable
 @MainActor
 final class ComparisonImageStore {
     private var images: [UUID: UIImage] = [:]
     private var prepared: Set<UUID> = []
+    /// Versions the library holds no displayable image for.
+    private var unavailable: Set<UUID> = []
 
     /// Long edge of the display proxies. Comfortably above a phone's pixel width at full zoom, and
     /// far below a 40MP develop.
     nonisolated private static let proxyLongEdge: CGFloat = 2048
 
     func image(for id: UUID) -> UIImage? { images[id] }
+
+    /// False once loading found no displayable image for the version; true until then, so Save
+    /// and Share are offered while the proxy is still decoding.
+    func isAvailable(_ id: UUID) -> Bool { !unavailable.contains(id) }
 
     /// Aspect ratio of the versions, for choosing a tiled layout. They are all the same frame, so
     /// the first one that has decoded speaks for the rest.
@@ -458,16 +541,14 @@ final class ComparisonImageStore {
         }
     }
 
-    func load(_ versions: [CookedVersion]) async {
-        for version in versions where !prepared.contains(version.uuid) {
-            let id = version.uuid
-            let data = version.imageData
+    func load(_ ids: [UUID], with loader: DevelopedImageLoader) async {
+        for id in ids where !prepared.contains(id) {
             prepared.insert(id)
-            guard !data.isEmpty else { continue }
-            let proxy = await Task.detached(priority: .userInitiated) {
-                FrameRenderer.proxy(from: data, maxLongEdge: Self.proxyLongEdge)
-            }.value
-            if let proxy { images[id] = proxy }
+            if let proxy = await loader.image(for: id, maxLongEdge: Self.proxyLongEdge) {
+                images[id] = proxy
+            } else {
+                unavailable.insert(id)
+            }
         }
     }
 }

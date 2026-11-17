@@ -67,9 +67,7 @@ struct SavedComparisonsView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 14) {
-                        if batchID == nil, recipes.count > 1 {
-                            recipeChips(recipes, selected: filter)
-                        }
+                        if let filter { activeFilter(filter) }
                         ForEach(gallery.runs(recipe: filter)) { run in
                             runSection(run, models: models, filter: filter)
                         }
@@ -84,6 +82,9 @@ struct SavedComparisonsView: View {
         .navigationTitle(batchID == nil ? "Recent Results" : "Results")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if batchID == nil, recipes.count > 1 {
+                ToolbarItem(placement: .topBarTrailing) { recipeMenu(recipes, selected: filter) }
+            }
             if batchID != nil, !gallery.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     let versions = gallery.runs(recipe: nil).flatMap(\.entries).flatMap(\.versions).map(\.id)
@@ -108,19 +109,40 @@ struct SavedComparisonsView: View {
 
     // MARK: Sections
 
-    private func recipeChips(_ recipes: [String], selected: String?) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                FilterChip(label: "All Recipes", selected: selected == nil) { recipeFilter = nil }
-                ForEach(recipes, id: \.self) { name in
-                    FilterChip(label: name, selected: selected == name) {
-                        recipeFilter = selected == name ? nil : name
-                    }
-                }
+    /// The recipe filter, behind the same toolbar icon as the Library's. A menu rather than a row of
+    /// chips: every recipe ever developed is a choice here, and a list of them scrolls down instead
+    /// of off the edge of the screen. Most recently developed first.
+    private func recipeMenu(_ recipes: [String], selected: String?) -> some View {
+        Menu {
+            Picker("Recipe", selection: Binding(get: { selected }, set: { recipeFilter = $0 })) {
+                Text("All Recipes").tag(String?.none)
+                ForEach(recipes, id: \.self) { Text($0).tag(String?.some($0)) }
             }
-            .padding(.horizontal, 16)
+        } label: {
+            Image(systemName: selected == nil ? "line.3.horizontal.decrease.circle"
+                                              : "line.3.horizontal.decrease.circle.fill")
         }
-        .padding(.horizontal, -16)
+        .accessibilityLabel("Filter by Recipe")
+        .accessibilityValue(selected ?? "All Recipes")
+    }
+
+    /// Names the recipe the history is narrowed to, and clears it, so a filtered gallery never
+    /// passes for the whole history.
+    private func activeFilter(_ recipe: String) -> some View {
+        Button { recipeFilter = nil } label: {
+            HStack(spacing: 6) {
+                Text(recipe).lineLimit(1)
+                Image(systemName: "xmark").font(.caption2.weight(.bold))
+            }
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Theme.onAccent)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 8)
+            .background(Theme.accent, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Showing \(recipe) only")
+        .accessibilityHint("Shows every recipe again.")
     }
 
     private func runSection(_ run: ResultsGallery.Run, models: [UUID: CookedPhoto], filter: String?) -> some View {

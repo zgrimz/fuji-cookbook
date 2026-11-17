@@ -60,9 +60,16 @@ enum Theme {
 
     // MARK: Type
 
-    /// Serif face for recipe/chapter names and screen titles (the "cookbook" voice).
+    /// Serif face for recipe/chapter names and screen titles (the "cookbook" voice), at a fixed
+    /// size. Rendered images such as share cards need the fixed size; on-screen text that should
+    /// follow the reader's text size uses `serif(_:weight:)` with a text style.
     static func serif(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
         .system(size: size, weight: weight, design: .serif)
+    }
+
+    /// The serif at a text style's size, so it grows and shrinks with Dynamic Type.
+    static func serif(_ style: Font.TextStyle, weight: Font.Weight = .semibold) -> Font {
+        .system(style, design: .serif, weight: weight)
     }
 
     /// Compact all-caps section label, e.g. "ALL PARAMETERS".

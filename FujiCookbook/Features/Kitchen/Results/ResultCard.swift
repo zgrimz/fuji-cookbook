@@ -8,6 +8,16 @@ struct ResultCard: View {
     let entry: ResultsGallery.Entry
     let loader: DevelopedImageLoader?
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// Side by side, the versions are a third of the card each; at accessibility text sizes that
+    /// leaves no room for a recipe's name, so they stack.
+    private var sheetLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 6))
+    }
+
     var body: some View {
         Group {
             if entry.versions.count == 1, let version = entry.versions.first {
@@ -30,7 +40,7 @@ struct ResultCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(version.recipeName)
-                        .font(Theme.serif(17))
+                        .font(Theme.serif(.headline))
                         .foregroundStyle(Theme.ink)
                         .lineLimit(2)
                     Spacer(minLength: 8)
@@ -49,7 +59,7 @@ struct ResultCard: View {
 
     private var contactSheet: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 6) {
+            sheetLayout {
                 ForEach(entry.versions) { version in
                     VStack(alignment: .leading, spacing: 5) {
                         DevelopedImage(version: version, loader: loader, maxLongEdge: 600)
@@ -95,8 +105,8 @@ struct ResultCard: View {
     }
 }
 
-/// A developed version at display size: the inline thumbnail at once, then a sharp copy from
-/// `DevelopedImageLoader` when one decodes. Landscape frames show at 3:2 and portrait at 4:5,
+/// A developed version at display size: the sharp copy at once when it is cached, otherwise the
+/// inline thumbnail until `DevelopedImageLoader` decodes one. Landscape frames show at 3:2 and portrait at 4:5,
 /// cropped to fill, so a run of cards keeps an even rhythm; the viewer shows the whole frame.
 struct DevelopedImage: View {
     let version: ResultVersion
@@ -104,6 +114,13 @@ struct DevelopedImage: View {
     let maxLongEdge: CGFloat
 
     @State private var sharp: UIImage?
+
+    init(version: ResultVersion, loader: DevelopedImageLoader?, maxLongEdge: CGFloat) {
+        self.version = version
+        self.loader = loader
+        self.maxLongEdge = maxLongEdge
+        _sharp = State(initialValue: DevelopedImageLoader.cachedImage(for: version.id, maxLongEdge: maxLongEdge))
+    }
 
     private var thumbnail: UIImage? { ThumbnailCache.thumbnail(uuid: version.id, data: version.thumbnailData) }
 
@@ -123,7 +140,9 @@ struct DevelopedImage: View {
                 }
             }
             .clipped()
-            .task(id: version.id) {
+            // Keyed on the loader's arrival too: Recent Results makes its loader in a task of its
+            // own, and a card that appeared before then would otherwise never load.
+            .task(id: loader == nil ? nil : version.id) {
                 guard sharp == nil, let loader else { return }
                 sharp = await loader.image(for: version.id, maxLongEdge: maxLongEdge)
             }

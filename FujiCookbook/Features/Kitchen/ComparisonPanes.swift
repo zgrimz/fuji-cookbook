@@ -39,6 +39,8 @@ struct ComparisonPane: View {
     var label: String?
     /// Tiled mode uses this to jump to the tapped version full-screen.
     var onTap: (() -> Void)?
+    /// What VoiceOver calls the pane, where `label` isn't drawn or doesn't say enough.
+    var accessibilityName: String?
 
     @GestureState private var liveZoom: CGFloat = 1
     @GestureState private var liveDrag: CGSize = .zero
@@ -60,6 +62,12 @@ struct ComparisonPane: View {
             )
             .overlay { labelOverlay(in: size) }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityName ?? label ?? "Developed photo")
+        .accessibilityAddTraits(onTap == nil ? .isImage : [.isImage, .isButton])
+        .accessibilityAction { onTap?() }
+        // Pinch and double-tap have no VoiceOver equivalent of their own.
+        .accessibilityAction(named: transform.isZoomed ? "Zoom to Fit" : "Zoom In") { doubleTap() }
     }
 
     /// The pan is attached only while zoomed in. At fit scale a horizontal drag has to reach the
@@ -181,8 +189,10 @@ struct CurtainComparison: View {
             let width = geo.size.width
             let x = width * position
             ZStack(alignment: .topLeading) {
-                ComparisonPane(image: trailing.image, transform: $transform)
-                ComparisonPane(image: leading.image, transform: $transform)
+                ComparisonPane(image: trailing.image, transform: $transform,
+                               accessibilityName: "\(trailing.label), right of the divider")
+                ComparisonPane(image: leading.image, transform: $transform,
+                               accessibilityName: "\(leading.label), left of the divider")
                     .mask(alignment: .leading) {
                         HStack(spacing: 0) {
                             Rectangle().frame(width: x)
@@ -224,7 +234,17 @@ struct CurtainComparison: View {
         .gesture(drag(width: width, minimumDistance: 0))
         .accessibilityLabel("Comparison divider")
         .accessibilityValue("\(Int(position * 100)) percent")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: position = min(position + Self.adjustStep, 1)
+            case .decrement: position = max(position - Self.adjustStep, 0)
+            @unknown default: break
+            }
+        }
     }
+
+    /// How far one VoiceOver swipe moves the divider, as a fraction of the width.
+    private static let adjustStep: CGFloat = 0.1
 
     private func sweep(width: CGFloat) -> some Gesture {
         // A little slack so a double-tap to zoom still reads as a tap rather than a drag.
