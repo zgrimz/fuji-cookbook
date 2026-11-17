@@ -38,9 +38,24 @@ struct ExtractedRecipeEditor: View {
                 textField("Notes", text: optional($recipe.notes))
             }
 
+            // The camera's IQ menu order, which `RecipeField`, the recipe screen and the app's editor
+            // follow too.
             group("Film Simulation") {
                 OptionRow(title: "Film Simulation", selection: binding(\.filmSimulation), settled: .provia)
             }
+
+            if hasMonochromaticColor {
+                group("Monochromatic Color") {
+                    NumberRow(title: "Warm–Cool", value: intBinding(\.monochromaticColorWC),
+                              range: DefaultRanges.range(for: .monochromaticColor), isInteger: true)
+                    divider
+                    NumberRow(title: "Magenta–Green", value: intBinding(\.monochromaticColorMG),
+                              range: DefaultRanges.range(for: .monochromaticColor), isInteger: true)
+                }
+            }
+
+            group("Effects") { effects }
+            group("White Balance") { whiteBalance }
 
             // The main editor's interlock and wording. The rule and its hardware evidence are
             // `RecipeApplicability.priorityOverrides`.
@@ -78,27 +93,14 @@ struct ExtractedRecipeEditor: View {
                 NumberRow(title: "Sharpness", value: intBinding(\.sharpness),
                           range: DefaultRanges.range(for: .sharpness), isInteger: true)
                 divider
-                NumberRow(title: "Clarity", value: intBinding(\.clarity),
-                          range: DefaultRanges.range(for: .clarity), isInteger: true)
-                divider
                 NumberRow(title: "High ISO NR", value: intBinding(\.highISONR),
                           range: DefaultRanges.range(for: .highISONR), isInteger: true)
                 divider
+                NumberRow(title: "Clarity", value: intBinding(\.clarity),
+                          range: DefaultRanges.range(for: .clarity), isInteger: true)
+                divider
                 NumberRow(title: "Exposure Bias", value: binding(\.exposureBias),
                           range: NumericRange(min: -3, max: 3, step: 1.0 / 3.0), isInteger: false)
-            }
-
-            group("White Balance") { whiteBalance }
-            group("Effects") { effects }
-
-            if hasMonochromaticColor {
-                group("Monochromatic Color") {
-                    NumberRow(title: "Warm–Cool", value: intBinding(\.monochromaticColorWC),
-                              range: DefaultRanges.range(for: .monochromaticColor), isInteger: true)
-                    divider
-                    NumberRow(title: "Magenta–Green", value: intBinding(\.monochromaticColorMG),
-                              range: DefaultRanges.range(for: .monochromaticColor), isInteger: true)
-                }
             }
         }
         .onAppear(perform: settleDefaults)
