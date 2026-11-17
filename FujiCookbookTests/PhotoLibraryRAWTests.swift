@@ -94,6 +94,79 @@ final class PhotoLibraryRAWTests: XCTestCase {
         XCTAssertEqual(some.message, "1 of the 2 photos holds two RAW files or two JPEG files, so the app can't tell which one to develop.")
     }
 
+    // MARK: - A RAW that isn't a RAF
+
+    private static let rafSignature = Array("FUJIFILMCCD-RAW 0201".utf8)
+    /// Little-endian TIFF, as a DNG starts (X-T30 III owner's report, 2026-11-16: the Photos picker
+    /// handed over a RAW that the upload refused as `tiff`).
+    private static let tiffSignature: [UInt8] = [0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00]
+
+    /// A copy laid out as `ReceivedRAW` makes one: a file in a directory of its own.
+    private func makeCopy(named name: String, bytes: [UInt8]) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent(name)
+        try Data(bytes + [UInt8](repeating: 0, count: 64)).write(to: file)
+        return file
+    }
+
+    func testACopiedRAFIsKept() throws {
+        let copy = try makeCopy(named: "DSCF0001.RAF", bytes: Self.rafSignature)
+        var result = PhotoLibraryRAW.Import()
+        try PhotoLibraryRAW.admit(copy, into: &result)
+        XCTAssertEqual(result, PhotoLibraryRAW.Import(urls: [copy]))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copy.path))
+    }
+
+    func testACopiedDNGIsRefusedAndRemoved() throws {
+        let copy = try makeCopy(named: "IMG_0001.DNG", bytes: Self.tiffSignature)
+        var result = PhotoLibraryRAW.Import()
+        try PhotoLibraryRAW.admit(copy, into: &result)
+        XCTAssertEqual(result, PhotoLibraryRAW.Import(notRAF: 1))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: copy.deletingLastPathComponent().path),
+                       "the refused copy's directory is removed")
+    }
+
+    /// The file's name is no evidence: a DNG renamed .RAF is still refused.
+    func testTheBytesDecideNotTheName() throws {
+        let copy = try makeCopy(named: "DSCF0001.RAF", bytes: Self.tiffSignature)
+        var result = PhotoLibraryRAW.Import()
+        try PhotoLibraryRAW.admit(copy, into: &result)
+        XCTAssertEqual(result.notRAF, 1)
+        XCTAssertTrue(result.urls.isEmpty)
+    }
+
+    func testAnUnreadableCopyThrowsAndIsRemoved() throws {
+        let copy = try makeCopy(named: "DSCF0001.RAF", bytes: Self.rafSignature)
+        try FileManager.default.removeItem(at: copy)
+        var result = PhotoLibraryRAW.Import()
+        XCTAssertThrowsError(try PhotoLibraryRAW.admit(copy, into: &result))
+        XCTAssertEqual(result, PhotoLibraryRAW.Import())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: copy.deletingLastPathComponent().path))
+    }
+
+    func testOnePhotoWhoseRAWIsNotARAFSaysSo() throws {
+        let problem = try XCTUnwrap(PhotoLibraryRAW.Import(notRAF: 1).problem)
+        XCTAssertEqual(problem.title, "Couldn't Use That Photo")
+        XCTAssertFalse(problem.offersRAWPairs, "the photo had a RAW; the pair route wouldn't find a RAF")
+        XCTAssertEqual(problem.message, "That photo's RAW isn't a Fujifilm .RAF file. The camera can develop only a .RAF it shot. An iPhone's ProRAW photos, for one, are DNG files.")
+    }
+
+    func testEveryOrSomePhotosWhoseRAWIsNotARAFAreCounted() throws {
+        let all = try XCTUnwrap(PhotoLibraryRAW.Import(notRAF: 2).problem)
+        XCTAssertEqual(all.title, "Couldn't Use Those Photos")
+        XCTAssertTrue(all.message.hasPrefix("None of those photos' RAWs is a Fujifilm .RAF file. "))
+
+        let one = try XCTUnwrap(PhotoLibraryRAW.Import(urls: [raf, raf], notRAF: 1).problem)
+        XCTAssertEqual(one.title, "Some Photos Weren't Added")
+        XCTAssertTrue(one.message.hasPrefix("1 of the 3 photos has a RAW that isn't a Fujifilm .RAF file. "))
+
+        let two = try XCTUnwrap(PhotoLibraryRAW.Import(urls: [raf], notRAF: 2).problem)
+        XCTAssertTrue(two.message.hasPrefix("2 of the 3 photos have RAWs that aren't Fujifilm .RAF files. "))
+    }
+
     func testAMixedPickNamesBothProblems() throws {
         let problem = try XCTUnwrap(PhotoLibraryRAW.Import(urls: [raf], withoutRAW: 1, failed: 2).problem)
         XCTAssertEqual(problem.title, "Some Photos Weren't Added")

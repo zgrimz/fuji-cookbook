@@ -6,8 +6,11 @@ import UniformTypeIdentifiers
 /// `PickedRAFStore` as a file URL, the way a pick from Files does.
 ///
 /// Each item is loaded through a `Transferable` that imports a RAW image and nothing else, so a
-/// photo's JPEG or HEIC can never stand in for the RAF the camera is about to develop. A photo
-/// without a RAW resource is counted rather than dropped, so the picker can say what it left out.
+/// photo's JPEG or HEIC can never stand in for the RAF the camera is about to develop. The picker
+/// offers any RAW under that type, an iPhone's ProRAW DNG among them, so each copy is kept only if
+/// its bytes start with the RAF signature, the check the upload makes. A photo without a RAW
+/// resource, or with one that isn't a RAF, is counted rather than dropped, so the picker can say
+/// what it left out.
 ///
 /// The picker shares a RAW-only photo's RAF — a RAF the Fujifilm app downloaded to the phone is one
 /// (X-T50 owner, 2026-10-31). A RAW+JPEG pair held as one photo is different: the picker offers
@@ -31,6 +34,9 @@ enum PhotoLibraryRAW {
         /// Photos whose originals are two RAWs or two non-RAW images, so which to develop can't be
         /// told; see `RAWResourceChoice.Verdict.invalid`.
         var unusable = 0
+        /// Photos whose RAW was copied and turned out not to be a RAF: an iPhone's ProRAW DNG or
+        /// another maker's RAW. The copy is removed.
+        var notRAF = 0
     }
 
     /// Whether a picked photo offers a RAW resource, judged from its content types before anything
@@ -51,7 +57,7 @@ enum PhotoLibraryRAW {
             }
             do {
                 if let raw = try await item.loadTransferable(type: ReceivedRAW.self) {
-                    result.urls.append(raw.url)
+                    try admit(raw.url, into: &result)
                 } else {
                     result.failed += 1
                 }
@@ -65,6 +71,33 @@ enum PhotoLibraryRAW {
             return Import()
         }
         return result
+    }
+
+    /// Keep a copied RAW if it is a RAF; otherwise remove the copy and count it as `notRAF`.
+    /// Throws when the copy can't be read, having removed it; the caller counts a failed copy.
+    static func admit(_ copy: URL, into result: inout Import) throws {
+        let directory = copy.deletingLastPathComponent()
+        let kind: FileKind
+        do {
+            kind = try FileKind.detect(head(of: copy))
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+        guard kind == .raf else {
+            try? FileManager.default.removeItem(at: directory)
+            result.notRAF += 1
+            AppLog.error(.kitchen, "Refused a picked RAW with no RAF header (\(kind.rawValue))")
+            return
+        }
+        result.urls.append(copy)
+    }
+
+    /// Enough of a file's start for `FileKind.detect` to tell every kind it knows.
+    private static func head(of file: URL) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: file)
+        defer { try? handle.close() }
+        return try handle.read(upToCount: 16) ?? Data()
     }
 }
 
@@ -112,11 +145,11 @@ extension PhotoLibraryRAW.Import {
         var offersRAWPairs = false
     }
 
-    /// Nil when every picked photo arrived as a RAW file.
+    /// Nil when every picked photo arrived as a RAF.
     var problem: Problem? {
         let noRAW = withoutRAW + checkedWithoutRAW
-        guard noRAW + failed + unusable > 0 else { return nil }
-        let total = urls.count + noRAW + failed + unusable
+        guard noRAW + notRAF + failed + unusable > 0 else { return nil }
+        let total = urls.count + noRAW + notRAF + failed + unusable
         var sentences: [String] = []
         if noRAW > 0 {
             // The plain fact first: what arrived had no RAW, which for a JPEG is simply what it is.
@@ -136,6 +169,10 @@ extension PhotoLibraryRAW.Import {
             } else {
                 sentences.append("Pick the .RAF itself, from Photos or with Browse Files.")
             }
+        }
+        if notRAF > 0 {
+            sentences.append(notRAFSentence(total: total))
+            sentences.append("The camera can develop only a .RAF it shot. An iPhone's ProRAW photos, for one, are DNG files.")
         }
         if unusable > 0 {
             let reason = "so the app can't tell which one to develop."
@@ -165,6 +202,17 @@ extension PhotoLibraryRAW.Import {
             title = "Some Photos Weren't Added"
         }
         return Problem(title: title, message: sentences.joined(separator: " "), offersRAWPairs: withoutRAW > 0)
+    }
+
+    private func notRAFSentence(total: Int) -> String {
+        if total == 1 {
+            return "That photo's RAW isn't a Fujifilm .RAF file."
+        } else if notRAF == total {
+            return "None of those photos' RAWs is a Fujifilm .RAF file."
+        } else if notRAF == 1 {
+            return "1 of the \(total) photos has a RAW that isn't a Fujifilm .RAF file."
+        }
+        return "\(notRAF) of the \(total) photos have RAWs that aren't Fujifilm .RAF files."
     }
 }
 
