@@ -33,10 +33,16 @@ enum Theme {
     /// which is too light to carry white: white on it measures about 2.2:1, under the 3:1 large
     /// text needs; this measures about 7.8:1, and white on the light green about 6.3:1.
     static let onAccent = dynamic(light: 0xFFFFFF, dark: 0x1C1914)
-    /// The connected camera's live dot on an `accent` fill: a pale green on the light accent, a deep
-    /// one on the dark-mode accent, so the dot clears the 3:1 a state graphic needs in both (about
-    /// 4.2:1 and 3.9:1). A pale dot on the dark-mode accent measures about 1.5:1.
-    static let liveDot = dynamic(light: 0x8FE3B0, dark: 0x24543A)
+    /// The green behind a large status surface such as the connected-camera card. In dark mode
+    /// `accent` is light enough to glare across a surface that size, so this keeps a deep green
+    /// there; controls, chips and badges stay on `accent`.
+    static let accentSurface = dynamic(light: 0x2E6B4A, dark: 0x285C40)
+    /// Text and symbols on an `accentSurface` fill: white, about 6.3:1 in light mode and 7.8:1 in
+    /// dark.
+    static let onAccentSurface = dynamic(light: 0xFFFFFF, dark: 0xFFFFFF)
+    /// The connected camera's live dot on an `accentSurface` fill. It clears the 3:1 a state graphic
+    /// needs in both appearances: about 4.2:1 in light mode and 5.1:1 in dark.
+    static let liveDot = dynamic(light: 0x8FE3B0, dark: 0x8FE3B0)
     /// Soft accent fill (filled slot badges, selected states).
     static let accentSoft = dynamic(light: 0xE4EFE6, dark: 0x24382C)
     /// The Kitchen's "cook" amber.

@@ -260,18 +260,18 @@ struct CameraView: View {
                         // does, so the header text doesn't move when the state changes.
                         ProgressView()
                             .controlSize(.mini)
-                            .tint(Theme.onAccent)
+                            .tint(Theme.onAccentSurface)
                             .frame(width: 10, height: 10)
                     }
                     Text(linkLabel(for: connected, in: state))
                         .font(.caption.weight(.semibold))
                         .kerning(1.0)
                         .textCase(.uppercase)
-                        .foregroundStyle(Theme.onAccent.opacity(0.85))
+                        .foregroundStyle(Theme.onAccentSurface.opacity(0.85))
                 }
                 Text(connected.model?.displayName ?? connected.productName)
                     .font(Theme.serif(24))
-                    .foregroundStyle(Theme.onAccent)
+                    .foregroundStyle(Theme.onAccentSurface)
                 HStack(spacing: 16) {
                     if let fw = connected.firmwareVersion {
                         Text("Firmware \(fw)")
@@ -286,12 +286,12 @@ struct CameraView: View {
                     Label(connected.capabilityBadge.text, systemImage: connected.capabilityBadge.symbol)
                 }
                 .font(.footnote.weight(.medium))
-                .foregroundStyle(Theme.onAccent.opacity(0.9))
+                .foregroundStyle(Theme.onAccentSurface.opacity(0.9))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .background(Theme.accent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            // Grayscale keeps the green's luminance, so `onAccent` text keeps its contrast in both
+            .background(Theme.accentSurface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            // Grayscale keeps the green's luminance, so the white text keeps its contrast in both
             // appearances.
             .grayscale(state == .reconnecting ? 1 : 0)
             .animation(.easeInOut(duration: 0.25), value: state)
