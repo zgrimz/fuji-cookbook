@@ -88,7 +88,7 @@ struct GuidedTestView: View {
             }
         }
         .interactiveDismissDisabled(isRunning)
-        .sheet(isPresented: $showingGuide) { ConnectionGuideView(modelID: session?.identifiedModelID) }
+        .sheet(isPresented: $showingGuide) { ConnectionGuideView() }
         .sheet(item: $previousRecovery) { record in GuidedRecoveryView(record: record) }
         .confirmationDialog("Start the test over?", isPresented: $showingStartOverConfirm,
                             titleVisibility: .visible) {

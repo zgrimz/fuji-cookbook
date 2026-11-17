@@ -332,12 +332,8 @@ func guidedSettingsDiffer(_ count: Int) -> String {
 
 /// Camera menu wording is setup guidance, never an input to USB identification.
 enum CameraTestSetup {
-    static func usbInstructions(modelID: String?) -> String {
-        if modelID == "X-M5" || modelID == "X-T30 III" {
-            return "On the camera: Network/USB Setting → Connection Mode → USB RAW CONV./BACKUP RESTORE. Set USB POWER SUPPLY/COMM SETTING to AUTO or POWER SUPPLY OFF/COMM ON."
-        }
-        return "On recent cameras: Network/USB Setting → Connection Mode → USB RAW CONV./BACKUP RESTORE. Older cameras use Connection Setting → USB Mode. Enable USB communication if the camera offers a power/communication setting."
-    }
+    /// The same for every body; Connection Help gives the reason for each setting.
+    static let usbInstructions = "On the camera, select Network/USB Setting > Connection Mode > USB RAW CONV./BACKUP RESTORE. On older models, this setting is at Connection Settings > USB Mode. Then select Network/USB Setting > USB Power Supply/Comm Setting > POWER SUPPLY OFF/COMM ON."
 }
 
 extension GuidedTestSession.OptionalCheck {

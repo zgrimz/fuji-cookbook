@@ -183,7 +183,7 @@ struct GuidedIntroStep: View {
             }
             coverageCard
             GuidedNoticeCard(title: "Before you begin", systemImage: "cable.connector",
-                message: "Use a USB data cable and a charged battery. Have one RAW file (.raf) taken with this camera in Photos or Files on your phone. We'll tell you when to unplug for menu checks and a photo. You can pause and return later.\n\n" + CameraTestSetup.usbInstructions(modelID: setupModelID))
+                message: "Use a USB data cable and a charged battery. Have one RAW file (.raf) taken with this camera in Photos or Files on your phone. We'll tell you when to unplug for menu checks and a photo. You can pause and return later.\n\n" + CameraTestSetup.usbInstructions)
             if setupModelID == "X-M5" {
                 GuidedNoticeCard(title: "Two different dials", systemImage: "dial.medium",
                     message: "Set the Film Simulation dial to C. The mode dial's C1–C4 positions select your custom banks. Use a bank assigned to STILL in IQ → CUSTOM MODE SETTING for this test.")
@@ -210,17 +210,13 @@ struct GuidedConnectStep: View {
     @Environment(CameraServices.self) private var camera
     @AppStorage(DiagnosticMode.key) private var diagnosticMode = false
 
-    private var setupModelID: String? {
-        camera.session.isConnected ? camera.session.connected?.registryModel?.id : session.identifiedModelID
-    }
-
     var body: some View {
         GuidedStepLayout(title: "Connect your camera",
                          subtitle: "Plug it in with a USB data cable, then tap Connect.") {
             GuidedNoticeCard(
                 title: "On the camera",
                 systemImage: "camera",
-                message: CameraTestSetup.usbInstructions(modelID: setupModelID) + " iOS asks for Camera and Files and Folders access. Allow both.")
+                message: CameraTestSetup.usbInstructions + " iOS asks for Camera and Files and Folders access. Allow both.")
             if case .failed(let message) = camera.session.status {
                 GuidedNoticeCard(title: "The app couldn't reach it", systemImage: "exclamationmark.triangle.fill",
                                  tint: Theme.warning, message: message)
