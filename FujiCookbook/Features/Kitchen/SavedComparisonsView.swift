@@ -2,9 +2,10 @@ import SwiftUI
 import SwiftData
 import UIKit
 
-/// Browse the developed photos saved in the app, from Develop and Test Kitchen runs alike. Two
-/// modes: scoped to a single batch (the destination right after a cook) or the full history
-/// grouped by run. Tap a photo to swipe through its versions in `ComparisonViewer`.
+/// Browse the developed photos saved in the app, from Develop and Test Kitchen runs alike, as a
+/// gallery of recipe-labelled cards grouped by run. Two modes: scoped to a single batch (the
+/// destination right after a cook) or the full history, which can be narrowed to one recipe. Tap a
+/// card to open its versions in `ComparisonViewer`.
 struct SavedComparisonsView: View {
     @Environment(\.modelContext) private var modelContext
 
@@ -24,128 +25,140 @@ struct SavedComparisonsView: View {
 
     private let batchID: UUID?
 
+    /// The recipe the history is narrowed to; nil shows every version.
+    @State private var recipeFilter: String?
+    @State private var pendingDelete: ResultPhoto?
+    @State private var loader: DevelopedImageLoader?
+
     init(batchID: UUID? = nil) {
         self.batchID = batchID
     }
 
-    private var scopedToBatch: Bool { batchID != nil }
-
-    /// The rows this screen shows: one run when scoped, the whole history otherwise.
-    private var photos: [CookedPhoto] {
-        guard let batchID else { return allPhotos }
-        return allPhotos.filter { $0.batchID == batchID }
-                        .sorted { $0.sortOrder < $1.sortOrder }
-    }
-
     var body: some View {
-        let photos = self.photos
-        return List {
-            if photos.isEmpty {
+        // Read every relationship once per pass, into values: touching a SwiftData relationship
+        // repeatedly while rendering faults objects back in mid-pass, and a fault's write
+        // invalidates the view. See `ComparisonViewer.versions`.
+        let gallery = ResultsGallery(photos: allPhotos.map(ResultPhoto.init),
+                                     scope: batchID.map(ResultsGallery.Scope.batch) ?? .all)
+        let recipes = gallery.recipeNames
+        let filter = recipeFilter.flatMap { recipes.contains($0) ? $0 : nil }
+        let models = Dictionary(allPhotos.map { ($0.uuid, $0) }, uniquingKeysWith: { first, _ in first })
+        return Group {
+            if gallery.isEmpty {
                 ContentUnavailableView("No Results Yet", systemImage: "photo.stack",
                                        description: Text("Photos you develop in the Kitchen are kept here."))
-                    .cardRowBackground()
-            } else if scopedToBatch {
-                Section { rows(photos) }.cardRowBackground()
             } else {
-                ForEach(batches) { batch in
-                    Section(batch.title) { rows(batch.photos) }
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        if batchID == nil, recipes.count > 1 {
+                            recipeChips(recipes, selected: filter)
+                        }
+                        ForEach(gallery.runs(recipe: filter)) { run in
+                            runSection(run, models: models, filter: filter)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
                 }
-                .cardRowBackground()
             }
         }
-        .scrollContentBackground(.hidden)
         .background(Theme.paper.ignoresSafeArea())
-        .navigationTitle(scopedToBatch ? "Results" : "Recent Results")
+        .navigationTitle(batchID == nil ? "Recent Results" : "Results")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    // MARK: Rows
-
-    private func rows(_ photos: [CookedPhoto]) -> some View {
-        ForEach(photos) { photo in
-            NavigationLink { ComparisonViewer(photo: photo) } label: { row(photo) }
+        .task { loader = DevelopedImageLoader(modelContainer: modelContext.container) }
+        .confirmationDialog(deleteTitle, isPresented: Binding(isPresent: $pendingDelete),
+                            titleVisibility: .visible, presenting: pendingDelete) { photo in
+            Button("Delete", role: .destructive) { delete(photo.id, models: models) }
+        } message: { photo in
+            Text(deleteMessage(photo))
         }
-        .onDelete { offsets in delete(offsets, in: photos) }
     }
 
-    private func row(_ photo: CookedPhoto) -> some View {
-        // Read the relationship *once* per row, for `filmstrip`, the count and the badge alike:
-        // repeatedly touching a SwiftData relationship during rendering can fault objects back in
-        // mid-pass — a fault writes to the model, the write invalidates the view, and the view
-        // re-renders. See `ComparisonViewer.versions`.
-        let versions = photo.sortedVersions
-        return HStack(spacing: 12) {
-            filmstrip(versions)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(photo.sourceFilename).font(.headline).lineLimit(1).truncationMode(.middle)
-                Text("\(versions.count) version\(versions.count == 1 ? "" : "s")")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                // Comparison runs develop downscaled — say so, so a preview isn't mistaken for the
-                // full-resolution file a Develop run produces.
-                if versions.contains(where: \.isComparisonPreview) {
-                    BadgeTag(text: "Comparison preview")
+    // MARK: Sections
+
+    private func recipeChips(_ recipes: [String], selected: String?) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                FilterChip(label: "All Recipes", selected: selected == nil) { recipeFilter = nil }
+                ForEach(recipes, id: \.self) { name in
+                    FilterChip(label: name, selected: selected == name) {
+                        recipeFilter = selected == name ? nil : name
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.horizontal, -16)
+    }
+
+    private func runSection(_ run: ResultsGallery.Run, models: [UUID: CookedPhoto], filter: String?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if batchID == nil {
+                Theme.SectionLabel(Self.runTitle(run)).padding(.horizontal, 4).padding(.top, 6)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 14, alignment: .top)],
+                      alignment: .leading, spacing: 14) {
+                ForEach(run.entries) { entry in
+                    if let model = models[entry.id] {
+                        NavigationLink {
+                            ComparisonViewer(photo: model,
+                                             initialVersionID: filter == nil ? nil : entry.versions.first?.id)
+                        } label: {
+                            ResultCard(entry: entry, loader: loader)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("Delete", systemImage: "trash", role: .destructive) {
+                                pendingDelete = entry.photo
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
-    /// Every version's thumbnail, not just the first. The row is the only view of a run you get
-    /// before tapping into it, and a single cover image would say nothing about what was compared.
-    /// These are the inline 240px thumbnails, so showing three costs no more than showing one.
-    private func filmstrip(_ versions: [CookedVersion]) -> some View {
-        HStack(spacing: 3) {
-            if versions.isEmpty {
-                thumbnail(nil, size: 56)
-            } else {
-                ForEach(versions.prefix(3)) { version in
-                    thumbnail(version, size: versions.count > 1 ? 44 : 56)
-                }
-            }
-        }
-    }
-
-    private func thumbnail(_ version: CookedVersion?, size: CGFloat) -> some View {
-        Group {
-            // Cached by uuid so the JPEG decode doesn't repeat on every body evaluation while scrolling.
-            if let version, let image = ThumbnailCache.thumbnail(uuid: version.uuid, data: version.thumbnailData) {
-                Image(uiImage: image).resizable().scaledToFill()
-            } else {
-                RoundedRectangle(cornerRadius: 8).fill(.quaternary)
-                    .overlay { Image(systemName: "photo").foregroundStyle(.secondary) }
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    // MARK: Grouping (history mode)
-
-    private struct Batch: Identifiable {
-        let id: UUID
-        let title: String
-        let photos: [CookedPhoto]
-    }
-
-    private var batches: [Batch] {
-        Dictionary(grouping: photos, by: { $0.batchID })
-            .map { id, group in
-                let sorted = group.sorted { $0.sortOrder < $1.sortOrder }
-                let date = sorted.first?.createdAt ?? .distantPast
-                let count = sorted.count
-                let title = "\(date.formatted(date: .abbreviated, time: .shortened)) · \(count) photo\(count == 1 ? "" : "s")"
-                return Batch(id: id, title: title, photos: sorted)
-            }
-            .sorted { ($0.photos.first?.createdAt ?? .distantPast) > ($1.photos.first?.createdAt ?? .distantPast) }
+    /// "Nov 13, 11:48 PM · 2 photos", with the year only when it isn't this one.
+    private static func runTitle(_ run: ResultsGallery.Run) -> String {
+        let sameYear = Calendar.current.isDate(run.date, equalTo: .now, toGranularity: .year)
+        let format = sameYear ? Date.FormatStyle.dateTime.month(.abbreviated).day().hour().minute()
+                              : Date.FormatStyle.dateTime.year().month(.abbreviated).day().hour().minute()
+        let count = run.entries.count
+        return "\(run.date.formatted(format)) · \(count) photo\(count == 1 ? "" : "s")"
     }
 
     // MARK: Delete
 
-    private func delete(_ offsets: IndexSet, in list: [CookedPhoto]) {
-        for index in offsets { modelContext.delete(list[index]) }
+    private var deleteTitle: String {
+        guard let photo = pendingDelete else { return "" }
+        return photo.versions.count > 1 ? "Delete \(photo.versions.count) Versions?" : "Delete This Photo?"
+    }
+
+    private func deleteMessage(_ photo: ResultPhoto) -> String {
+        let what = photo.versions.count > 1
+            ? "Every version of \(photo.sourceFilename) developed in this run is removed from the app."
+            : "This develop of \(photo.sourceFilename) is removed from the app."
+        return what + " Copies saved to Photos or shared elsewhere stay."
+    }
+
+    private func delete(_ id: UUID, models: [UUID: CookedPhoto]) {
+        guard let model = models[id] else { return }
+        modelContext.delete(model)
         do {
             try modelContext.save()
         } catch {
             AppLog.error(.kitchen, "Recent Results: the delete did not save — \(AppLog.bounded(error))")
         }
+    }
+}
+
+private extension ResultPhoto {
+    init(_ photo: CookedPhoto) {
+        self.init(id: photo.uuid, batchID: photo.batchID, createdAt: photo.createdAt,
+                  sortOrder: photo.sortOrder, sourceFilename: photo.sourceFilename,
+                  versions: photo.sortedVersions.map {
+                      ResultVersion(id: $0.uuid, recipeName: $0.recipeName, filmSimulation: $0.filmSimulation,
+                                    isComparisonPreview: $0.isComparisonPreview, thumbnailData: $0.thumbnailData)
+                  })
     }
 }

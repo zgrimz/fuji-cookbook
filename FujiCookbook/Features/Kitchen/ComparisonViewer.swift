@@ -12,6 +12,9 @@ import UIKit
 /// into one frame's shadows pinches all of them to the same place.
 struct ComparisonViewer: View {
     let photo: CookedPhoto
+    /// The version Swipe opens on, as when Recent Results is narrowed to one recipe; nil opens on
+    /// the first.
+    var initialVersionID: UUID?
 
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
@@ -95,6 +98,9 @@ struct ComparisonViewer: View {
         let models = photo.sortedVersions
         filename = photo.sourceFilename
         versions = models.map(VersionSnapshot.init)
+        if let initialVersionID, let index = versions.firstIndex(where: { $0.id == initialVersionID }) {
+            selection = index
+        }
         if pair.b >= models.count { pair = (0, min(1, max(0, models.count - 1))) }
         store.prime(models)
         await store.load(models)
