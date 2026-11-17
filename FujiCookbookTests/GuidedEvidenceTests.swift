@@ -69,15 +69,19 @@ final class GuidedEvidenceTests: XCTestCase {
         XCTAssertFalse(initial.reads.isEmpty)
         XCTAssertNotNil(sweep.capturedAt)
         XCTAssertEqual(session.propertyReport?.evidenceID, sweep.evidenceID)
-        let deniedRead = await camera.gate.run("another operation") {
-            await camera.slotReader.requestRefresh()
+        let deniedRead = try await camera.gate.run("another operation") { () async -> Result<WalkResult?, CameraBusy> in
+            do throws(CameraBusy) {
+                return .success(try await camera.slotReader.requestRefresh())
+            } catch {
+                return .failure(error)
+            }
         }
-        // The outer run holds the gate, so the inner refresh is refused and answers nil.
-        XCTAssertNil(deniedRead ?? nil, "Refused reads must not verify cached values")
-        let refusedProbe = await camera.gate.run("another operation") {
+        // The outer run holds the gate, so the inner refresh is refused.
+        XCTAssertEqual(deniedRead, .failure(CameraBusy(runningOperation: "another operation")),
+                       "Refused reads must not verify cached values")
+        session.propertyReport = try await camera.gate.run("another operation") {
             await GuidedTestRunner.runPropertyReport(camera, slot: 1)
         }
-        session.propertyReport = try XCTUnwrap(refusedProbe)
         GuidedTestRunner.captureReadEvidence(camera, session: &session)
         XCTAssertNotEqual(session.propertyReport?.evidenceID, sweep.evidenceID,
                           "A refused new attempt must not acquire the previous sweep's identity")

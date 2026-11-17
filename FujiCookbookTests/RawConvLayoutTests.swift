@@ -117,11 +117,11 @@ final class DynamicRangeProbeTests: XCTestCase {
     }
 
     /// End to end against the mock: one write per candidate, plus the restore, all in the trace.
-    func testTheProbeWritesEveryCandidateAndPutsTheValueBack() async {
+    func testTheProbeWritesEveryCandidateAndPutsTheValueBack() async throws {
         let m = CameraServices()
         await m.connector.connectDemo(using: MockCameraTransport(faults: MockCameraFaults(isInstant: true)))
 
-        let entries = await m.diagnostics.probeWriteValues(slot: 1, property: .dynamicRange, candidates: candidates)
+        let entries = try await m.diagnostics.probeWriteValues(slot: 1, property: .dynamicRange, candidates: candidates)
         XCTAssertEqual(entries.map(\.wrote), candidates)
 
         let writes = (m.reports.report?.transactions ?? []).filter {

@@ -240,6 +240,104 @@ final class GuidedTestRunnerTests: XCTestCase {
         XCTAssertEqual(after, before, "and neither one reached the camera")
     }
 
+    /// The operation gate's own refusal, with the session still reading as connected, so the check
+    /// before the call passes. The steps take the refusal from the error the gate throws, not from
+    /// an empty result.
+    func testARefusalByTheOperationGateIsRecordedAsRefused() async throws {
+        let (m, t) = await connect()
+        var session = preparedSession(m)
+        session.grainProbe = nil
+        let before = await t.transactionCount
+
+        let (property, grain) = try await m.gate.run("another operation") {
+            (await GuidedTestRunner.runPropertyReport(m, slot: 2),
+             await GuidedTestRunner.runGrainProbe(m, slot: 1, session: session))
+        }
+        XCTAssertEqual(property.state, .refused)
+        XCTAssertNil(property.count, "nothing was measured, so nothing is claimed")
+        XCTAssertNil(property.evidenceID, "a refused report has no sweep of its own")
+        XCTAssertEqual(grain.state, .refused, grain.detail ?? "nil")
+        let after = await t.transactionCount
+        XCTAssertEqual(after, before, "and neither one reached the camera")
+    }
+
+    /// A slot read the operation gate refused has read nothing, so the step is not ready.
+    func testASlotReadRefusedByTheOperationGateLeavesTheStepBusy() async throws {
+        let (m, _) = await connect()
+        m.slotReader.discardProbedSlotCount()
+        XCTAssertFalse(m.slotReader.hasRead, "precondition: the step has slots to read")
+
+        let gate = try await m.gate.run("another operation") { await GuidedTestRunner.ensureSlots(m) }
+        XCTAssertEqual(gate, .busy("Another camera operation is still running."))
+    }
+
+    /// A push the operation gate refused wrote nothing, so the trial carries no push time: the
+    /// recipe stays retryable and the slot is not counted among those written.
+    func testAPushRefusedByTheOperationGateIsNotFiledAsAnAttempt() async throws {
+        let (m, t) = await connect()
+        let session = preparedSession(m)
+        let recipe = try XCTUnwrap(GuidedTestRecipes.recipe(id: "priority", for: try XCTUnwrap(m.session.model)))
+        let before = await t.transactionCount
+
+        let (trial, result) = try await m.gate.run("another operation") {
+            await GuidedTestRunner.runPush(m, recipe: recipe, slot: 1, session: session)
+        }
+        XCTAssertNil(trial.pushedAt)
+        XCTAssertNil(trial.connectionID)
+        XCTAssertEqual(trial.outcome, .notWritten)
+        XCTAssertEqual(trial.refusalReason, CameraBusy(runningOperation: "another operation").localizedDescription)
+        XCTAssertNil(result, "no per-field table for a push that never started")
+        let after = await t.transactionCount
+        XCTAssertEqual(after, before)
+    }
+
+    func testAProfileHarvestRefusedByTheOperationGateIsRecordedAsRefused() async throws {
+        let (m, t) = await connect(MockCameraFaults(productName: "FUJIFILM GFX 100", firmwareVersion: nil,
+                                                    profileNeedsUpload: true))
+        XCTAssertTrue(m.conversion.canHarvestProfile, "precondition: a body the harvest is for")
+        let before = await t.transactionCount
+
+        let harvest = try await m.gate.run("another operation") {
+            await GuidedTestRunner.runProfileHarvest(m, raf: RAFFixture.raf())
+        }
+        XCTAssertEqual(harvest.state, .refused, harvest.detail ?? "nil")
+        let after = await t.transactionCount
+        XCTAssertEqual(after, before)
+    }
+
+    /// A property report that read nothing because its slot select was refused is a failed reading,
+    /// not a busy camera. The connect walk on this body stops at its own refused select, so the
+    /// status is set back to connected for the report to be attempted at all.
+    func testAPropertyReportWhoseSelectWasRefusedIsAFailure() async {
+        let (m, _) = await connect(.busyXM5)
+        m.session.setStatus(.connected)
+        XCTAssertEqual(GuidedTestRunner.gate(m), .ready, "precondition: the step will call the report")
+
+        let property = await GuidedTestRunner.runPropertyReport(m, slot: 2)
+        XCTAssertEqual(property.state, .failed, property.detail ?? "nil")
+        XCTAssertTrue(property.detail?.contains("Device Busy (0x2019)") == true, property.detail ?? "nil")
+    }
+
+    /// A grain probe whose session is replaced while it selects the bank stops before any
+    /// candidate and leaves no abort note, so the step falls back to its own reason.
+    func testAGrainProbeStoppedByANewSessionGivesTheFallbackReason() async throws {
+        let (m, t) = await connect()
+        var prepared = preparedSession(m)
+        prepared.grainProbe = nil
+        let session = prepared
+        let held = expectation(description: "the probe is selecting its bank")
+        await t.holdNextWrite(to: FujiPTP.Prop.slotSelector) { held.fulfill() }
+        let probe = Task { await GuidedTestRunner.runGrainProbe(m, slot: 1, session: session) }
+        await fulfillment(of: [held], timeout: 10)
+
+        await m.connector.connectDemo(using: MockCameraTransport(faults: MockCameraFaults(isInstant: true)))
+        await t.releaseHeldWrite()
+        let grain = await probe.value
+
+        XCTAssertEqual(grain.state, .failed)
+        XCTAssertEqual(grain.detail, "The grain probe stopped before writing any value. Reconnect the camera and try again.")
+    }
+
     func testALostCameraIsRefusedAtTheGateRatherThanReportedAsEmpty() async {
         let (m, _) = await connect()
         await m.connector.disconnect()

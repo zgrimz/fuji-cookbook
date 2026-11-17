@@ -607,7 +607,7 @@ struct GuidedPowerCycleStep: View {
             // persistence from whatever the last read left behind. The whole question here is what
             // the camera holds *now*.
             let readStartedAt = CameraCompatibilityReport.timestamp()
-            let read = await camera.slotReader.requestRefresh()
+            let read = try? await camera.slotReader.requestRefresh()
             let trial = pass.trials[index]
             let slot = camera.slotReader.slots.first { $0.index == trial.slot }
             let freshReadSucceeded = read != nil && GuidedTestRunner.gate(camera).isReady

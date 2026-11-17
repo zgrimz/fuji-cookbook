@@ -458,7 +458,9 @@ struct GuidedReadSlotsStep: View {
                 GuidedPrimaryButton(title: "Read Slots", systemImage: "arrow.down.doc", busy: isRunning) {
                     Task {
                         isRunning = true
-                        await camera.slotReader.requestRefresh()
+                        // A refused read leaves the slots unread; `readCamera` reads them again through
+                        // `ensureSlots`, which reports a refusal.
+                        _ = try? await camera.slotReader.requestRefresh()
                         session.propertyReport = nil
                         await readCamera()
                         isRunning = false
@@ -487,9 +489,12 @@ struct GuidedReadSlotsStep: View {
                 slots: camera.slotReader.slots, model: camera.session.model)
         }
         if session.propertyReport == nil || session.propertyReport?.state == .failed || session.propertyReport?.state == .refused {
-            if ready.isReady {
+            switch ready {
+            case .ready:
                 session.propertyReport = await GuidedTestRunner.runPropertyReport(camera, slot: camera.slotReader.slots.first?.index ?? 1)
-            } else {
+            case .busy:
+                session.propertyReport = .init(state: .refused, detail: "The camera was busy. Nothing was read.")
+            case .reconnecting, .lost, .disconnected:
                 session.propertyReport = .init(state: .failed, detail: "The slot read did not finish. Reconnect and retry.")
             }
             GuidedTestRunner.captureReadEvidence(camera, session: &session)

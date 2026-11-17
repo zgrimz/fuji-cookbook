@@ -95,13 +95,14 @@ final class SlotReader {
     /// something else is talking to the camera — `connect` sets `status = .connected` before it
     /// awaits its own slot read, so the Camera tab is pullable while that read is still walking the
     /// slots, and the gate is what keeps a second walk, a push or a probe out of it.
-    /// Nil when the gate was held or no transport is attached, so nothing was read.
+    /// Nil when no transport is attached, and throws `CameraBusy` when the gate was held; either
+    /// way nothing was read.
     @discardableResult
-    func requestRefresh() async -> WalkResult? {
-        await gate.run("refresh slots") {
+    func requestRefresh() async throws(CameraBusy) -> WalkResult? {
+        try await gate.run("refresh slots") {
             guard self.session.transport != nil else { return nil }
             return await self.refresh()
-        } ?? nil
+        }
     }
 
     @discardableResult

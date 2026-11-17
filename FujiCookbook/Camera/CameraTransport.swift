@@ -297,6 +297,15 @@ struct ConversionResult: Identifiable, Equatable {
     /// that may not reflect the recipe, not every develop that happened.
     var isReportableAnomaly: Bool { !success || !warnings.isEmpty || !clampedFields.isEmpty }
 
+    /// The result of a develop the operation gate refused: nothing reached the camera. The refusal
+    /// is recorded as the `camera_busy` failure reason, which the cook record and the report keep.
+    static func refusedBecauseBusy(sourceFilename: String) -> ConversionResult {
+        var result = ConversionResult(sourceFilename: sourceFilename, success: false, clampedFields: [],
+                                      errorMessage: "Another camera operation is still running. This develop wasn't started.")
+        result.evidence.failureReason = "camera_busy"
+        return result
+    }
+
     /// Suggested output filename: `<source basename>.jpg`.
     var outputFilename: String {
         let base = (sourceFilename as NSString).deletingPathExtension
@@ -666,8 +675,40 @@ struct SlotWriteResult: Identifiable, Equatable {
     /// How the staged first write ended, when this push staged one (`StagedWrite`). Nil on an
     /// unstaged push: a verified body, a restore, or a recipe that changes neither candidate.
     var firstWrite: FirstWriteOutcome? = nil
+    /// Set when `CameraOperationGate` refused this write because another operation held the camera.
+    /// Nothing was sent, so `outcome` is `.notWritten`. Only `refused(slot:by:)` sets it: the
+    /// initializer below leaves it out.
+    private(set) var refusedBy: CameraBusy? = nil
 
     var id: Int { slot }
+
+    init(slot: Int, outcome: SlotOutcome, nameWritten: Bool, nameApplied: String? = nil, clampedFields: [String],
+         fields: [FieldResult], errorMessage: String? = nil, filmSimulationReadBack: FilmSimulation? = nil,
+         dynamicRangeReadBack: DynamicRange? = nil, advisories: [String] = [], notes: [String] = [],
+         nameOutcome: FieldOutcome? = nil, firstWrite: FirstWriteOutcome? = nil) {
+        self.slot = slot
+        self.outcome = outcome
+        self.nameWritten = nameWritten
+        self.nameApplied = nameApplied
+        self.clampedFields = clampedFields
+        self.fields = fields
+        self.errorMessage = errorMessage
+        self.filmSimulationReadBack = filmSimulationReadBack
+        self.dynamicRangeReadBack = dynamicRangeReadBack
+        self.advisories = advisories
+        self.notes = notes
+        self.nameOutcome = nameOutcome
+        self.firstWrite = firstWrite
+    }
+
+    /// The result of a write the operation gate refused: nothing reached the camera.
+    static func refused(slot: Int, by busy: CameraBusy) -> SlotWriteResult {
+        var result = SlotWriteResult(slot: slot, outcome: .notWritten, nameWritten: false, nameApplied: nil,
+                                     clampedFields: [], fields: [],
+                                     errorMessage: "Another camera operation is still running. Nothing was written.")
+        result.refusedBy = busy
+        return result
+    }
 
     /// `D18E` Image Size refused with `0x201C` while the recipe itself wrote. Seen on an X-T50
     /// (fw 1.32, 2026-09-06): C1 refused it on every push while C2–C7 took the identical byte. The

@@ -3,11 +3,11 @@ import Foundation
 /// The guided test's hands: the only part of it that talks to the camera.
 ///
 /// Everything here exists to turn a `CameraServices` call into one of the states a step can be in,
-/// and the classification is the hard part. `probeProperties` answers `(slot, [])` when it was
-/// refused by the concurrency gate, when there is no transport, *and* when the slot select failed —
-/// three different things, one of which is a fact about the body and two of which are not. So
-/// nothing here judges an outcome by an empty result: it checks the gate before calling and the
-/// connection after.
+/// and the classification is the hard part. `probeProperties` answers `(slot, [])` both when the
+/// slot select failed, which is a fact about the body, and when there is no transport, which is not;
+/// it throws `CameraBusy` when the concurrency gate refused it. So nothing here judges an outcome by
+/// an empty result: it checks that the camera is ready before calling, takes a refusal from the error
+/// the gate throws, and checks the connection after.
 @MainActor
 enum GuidedTestRunner {
 
@@ -98,7 +98,11 @@ enum GuidedTestRunner {
         let gate = gate(camera)
         guard gate.isReady else { return gate }
         guard !camera.slotReader.hasRead else { return .ready }
-        await camera.slotReader.requestRefresh()
+        do throws(CameraBusy) {
+            try await camera.slotReader.requestRefresh()
+        } catch {
+            return .busy("Another camera operation is still running.")
+        }
         return Self.gate(camera)
     }
 
@@ -226,7 +230,15 @@ enum GuidedTestRunner {
             return .init(state: .refused, detail: "The camera was busy. Nothing was read.")
         }
         let previousSweepID = camera.reports.report?.propertySweep?.evidenceID
-        let result = await camera.diagnostics.probeProperties(slot: slot)
+        let result: (slot: Int, probes: [PropertyProbe])
+        do throws(CameraBusy) {
+            result = try await camera.diagnostics.probeProperties(slot: slot)
+        } catch {
+            var refused = GuidedTestSession.ProbeOutcome(state: .refused,
+                                                         detail: "Another camera operation was still running. Nothing was read.")
+            refused.evidenceID = nil   // nothing was swept, so no sweep is this attempt's evidence
+            return refused
+        }
         func recorded(_ outcome: GuidedTestSession.ProbeOutcome) -> GuidedTestSession.ProbeOutcome {
             var outcome = outcome
             if let sweep = camera.reports.report?.propertySweep,
@@ -241,9 +253,11 @@ enum GuidedTestRunner {
         if let failure = failureDetail(camera) {
             return recorded(.init(state: .failed, slot: result.slot, detail: failure))
         }
+        // Reached only with no transport while the session still reads as connected: a refused
+        // select sets the session's status, which `failureDetail` reports above.
         guard !result.probes.isEmpty else {
-            return recorded(.init(state: .refused,
-                         detail: "Another camera operation was still running. Nothing was read."))
+            return recorded(.init(state: .failed, slot: result.slot,
+                                  detail: "The camera returned nothing for the property report."))
         }
         let count = result.probes.filter { $0.value != nil }.count
         if let failure = slotReadFailure(camera.reports.report?.slots, model: camera.session.model,
@@ -341,11 +355,19 @@ enum GuidedTestRunner {
         guard gate(camera).isReady else {
             return .init(state: .refused, detail: "The camera was busy. Nothing was sent.")
         }
-        guard let outcome = await camera.conversion.harvestConversionProfile(raf: raf) else {
+        let harvested: RawConversionService.ProfileHarvestOutcome?
+        do throws(CameraBusy) {
+            harvested = try await camera.conversion.harvestConversionProfile(raf: raf)
+        } catch {
             return .init(state: .refused, detail: "Another camera operation was still running. Nothing was sent.")
         }
         if let failure = failureDetail(camera) {
             return .init(state: .failed, detail: failure)
+        }
+        // Not expected: the harvest answers nil only when `canHarvestProfile` is false, which the
+        // guard at the top of this function has just ruled out.
+        guard let outcome = harvested else {
+            return .init(state: .notWritable, detail: "This body can't be sent a RAF.")
         }
         if outcome.record.uploadOutcome != "accepted" {
             return .init(state: .failed, detail: outcome.summary)
@@ -368,19 +390,23 @@ enum GuidedTestRunner {
             return .init(state: .refused, slot: slot, detail: "The recovery record could not be saved. Nothing was written.")
         }
         let notesBefore = camera.reports.report?.notes.count ?? 0
-        let entries = await camera.diagnostics.probeWriteValues(
-            slot: slot, property: .grain, candidates: CameraDiagnostics.grainProbeCandidates)
+        let entries: [WriteProbeEntry]
+        do throws(CameraBusy) {
+            entries = try await camera.diagnostics.probeWriteValues(
+                slot: slot, property: .grain, candidates: CameraDiagnostics.grainProbeCandidates)
+        } catch {
+            return .init(state: .refused, slot: slot, detail: "The camera was busy. Nothing was written.")
+        }
         if let failure = failureDetail(camera) {
             return .init(state: .failed, slot: slot, detail: failure)
         }
         guard !entries.isEmpty else {
-            // `probeWriteValues` returns nothing for an aborted probe and for a refused gate alike.
-            // An abort leaves a note saying why; without one the app cannot tell the two apart, and
-            // says so rather than picking.
+            // An aborted probe leaves a note saying why; a precondition that stopped it before any
+            // candidate may not.
             let abortNote = (camera.reports.report?.notes ?? []).dropFirst(notesBefore)
                 .first(where: { $0.hasPrefix("write probe ") && $0.contains(": aborted — ") })
             return .init(state: .failed, slot: slot,
-                         detail: abortNote ?? "The camera didn't accept the slot selection, or another operation was already running.")
+                         detail: abortNote ?? "The grain probe stopped before writing any value. Reconnect the camera and try again.")
         }
         let restoreNotes = Array((camera.reports.report?.notes ?? []).dropFirst(notesBefore))
         // The probe's own verdict on its cleanup, in the words `probeWriteValues` notes it in. A
@@ -393,7 +419,7 @@ enum GuidedTestRunner {
         // A new slot read verifies the grain restoration independently of the probe's optimistic
         // completion. A camera that disappears here leaves recovery pending, never green.
         let readStartedAt = CameraCompatibilityReport.timestamp()
-        let read = await camera.slotReader.requestRefresh()
+        let read = try? await camera.slotReader.requestRefresh()
         guard read != nil, gate(camera).isReady,
               camera.reports.report?.slots.readAt.map({ $0 >= readStartedAt }) == true,
               slotReadFailure(camera.reports.report?.slots, model: camera.session.model,
@@ -465,11 +491,21 @@ enum GuidedTestRunner {
             trial.refusalReason = "The recovery record could not be saved. Nothing was written."
             return (trial, nil)
         }
-        trial.pushedAt = CameraCompatibilityReport.timestamp()
-        trial.connectionStartedAt = camera.reports.report?.generatedAt
-        trial.connectionID = camera.reports.report?.connectionID
+        let pushedAt = CameraCompatibilityReport.timestamp()
+        let connectionStartedAt = camera.reports.report?.generatedAt
+        let connectionID = camera.reports.report?.connectionID
         let name = camera.session.model.map { recipe.slotName(for: $0) } ?? recipe.name
         let result = await camera.slotWriter.push(settings: recipe.settings, name: name, toSlot: slot)
+        // A push the operation gate refused sent nothing, so it is filed like the refusals above:
+        // no push time, which keeps the recipe retryable and the slot out of what was written.
+        if let busy = result.refusedBy {
+            trial.outcome = .notWritten
+            trial.refusalReason = busy.localizedDescription
+            return (trial, nil)
+        }
+        trial.pushedAt = pushedAt
+        trial.connectionStartedAt = connectionStartedAt
+        trial.connectionID = connectionID
 
         trial.outcome = result.outcome
         trial.nameApplied = result.nameWritten ? result.nameApplied : nil

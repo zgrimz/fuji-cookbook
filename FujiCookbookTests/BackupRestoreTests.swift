@@ -344,9 +344,9 @@ final class BackupRestoreTests: XCTestCase {
     }
 
     /// No-data reads never authorize a diagnostic experiment or a seeded recipe push.
-    func testMissingOriginalsPreventBothTheProbeAndPush() async {
+    func testMissingOriginalsPreventBothTheProbeAndPush() async throws {
         let manager = await emptyCamera()
-        let entries = await manager.diagnostics.probeWriteValues(slot: 1, property: .grain,
+        let entries = try await manager.diagnostics.probeWriteValues(slot: 1, property: .grain,
                                                      candidates: CameraDiagnostics.grainProbeCandidates)
         let result = await manager.slotWriter.push(settings: RecipeSettings(filmSimulation: .classicChrome),
                                         name: "CT Colour", toSlot: 1)

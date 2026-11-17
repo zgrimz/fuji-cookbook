@@ -103,6 +103,10 @@ actor MockCameraTransport: CameraTransport {
     /// Every `writeProperty` call this session — slot selects and names included. Lets a test state
     /// the one thing the unrecognized-body path must guarantee: nothing was written, not even D18C.
     private(set) var totalWriteCount = 0
+    /// Every operation the app asked this transport for, answered, refused or failed: each one
+    /// starts at `requireSession`, which counts it. Lets a test state that an operation the gate
+    /// refused sent the camera nothing at all.
+    private(set) var transactionCount = 0
     /// Bounded transaction trace for the compatibility report; nil when nobody is listening.
     private var trace: PTPTraceRecorder?
 
@@ -287,6 +291,7 @@ actor MockCameraTransport: CameraTransport {
     /// that was never opened is a programming mistake, and a session that dropped underneath a
     /// running operation is the cable coming out — which is what the push path has to survive.
     private func requireSession() throws {
+        transactionCount += 1
         if sessionDropped { throw CameraError.disconnectedDuringOperation }
         guard isOpen else { throw CameraError.sessionFailed("session not open") }
     }

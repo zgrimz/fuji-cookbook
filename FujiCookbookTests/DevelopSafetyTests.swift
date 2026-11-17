@@ -282,39 +282,44 @@ final class DevelopSafetyTests: XCTestCase {
         XCTAssertEqual(retained.count, 1)
     }
 
-    func testDevelopGateRejectsProbeBatchMatrixAndHarvestUntilTheWholeCookFinishes() async {
+    func testDevelopGateRejectsProbeBatchMatrixAndHarvestUntilTheWholeCookFinishes() async throws {
         let (camera, transport) = await connected()
         let held = expectation(description: "profile write is held")
         await transport.holdNextWrite(to: profile) { held.fulfill() }
         let running = Task { await self.cook(camera) }
         await fulfillment(of: [held], timeout: 3)
-        let probe = await camera.conversion.probeConversionDynamicRange(raf: RAFFixture.raf(), filename: "other.RAF")
-        XCTAssertTrue(probe.report.contains("wasn't started"))
+        let develop = CameraBusy(runningOperation: "develop")
+        let probe = await busyRefusal { () async throws(CameraBusy) in
+            try await camera.conversion.probeConversionDynamicRange(raf: RAFFixture.raf(), filename: "other.RAF")
+        }
+        XCTAssertEqual(probe, develop)
         let batch = await camera.conversion.cookBatch([item("other.RAF")])
         XCTAssertEqual(batch.first?.evidence.failureReason, "camera_busy")
         let matrix = await camera.conversion.cookMatrix(rafs: [.inMemory(RAFFixture.raf(), filename: "other.RAF")],
             recipes: [(settings: .neutral, displayName: "Other", filmSimulation: nil)])
         XCTAssertEqual(matrix.first?.versions.first?.result.evidence.failureReason, "camera_busy")
-        let harvest = await camera.conversion.harvestConversionProfile(raf: Data([1]))
-        XCTAssertNil(harvest)
+        let harvest = await busyRefusal { () async throws(CameraBusy) in
+            try await camera.conversion.harvestConversionProfile(raf: Data([1]))
+        }
+        XCTAssertEqual(harvest, develop)
         await transport.releaseHeldWrite()
         let result = await running.value
         defer { removeRecovery(result) }
         XCTAssertTrue(result.success)
     }
 
-    func testProbeOwnsTheGateAndStopsAfterAmbiguousOutput() async {
+    func testProbeOwnsTheGateAndStopsAfterAmbiguousOutput() async throws {
         var faults = MockCameraFaults()
         faults.extraObjectsOnConversion = [Data([1])]
         let (camera, transport) = await connected(faults)
         let held = expectation(description: "probe profile write is held")
         await transport.holdNextWrite(to: profile) { held.fulfill() }
-        let running = Task { await camera.conversion.probeConversionDynamicRange(raf: RAFFixture.raf(), filename: "probe.RAF") }
+        let running = Task { try await camera.conversion.probeConversionDynamicRange(raf: RAFFixture.raf(), filename: "probe.RAF") }
         await fulfillment(of: [held], timeout: 3)
         let refused = await cook(camera)
         XCTAssertEqual(refused.evidence.failureReason, "camera_busy")
         await transport.releaseHeldWrite()
-        let run = await running.value
+        let run = try await running.value
         XCTAssertTrue(run.report.contains("RESTORE NOT ATTEMPTED"))
         let triggers = await transport.conversionTriggerCount
         let deleted = await transport.deletedObjectHandles
@@ -417,12 +422,12 @@ final class DevelopSafetyTests: XCTestCase {
         }
     }
 
-    func testProbeStopsAfterUnconfirmedProfileWriteWithoutRestoration() async {
+    func testProbeStopsAfterUnconfirmedProfileWriteWithoutRestoration() async throws {
         var faults = MockCameraFaults()
         faults.lostWriteResponseCodes = [profile]
         let (camera, transport) = await connected(faults)
         let writesBefore = await transport.totalWriteCount
-        let run = await camera.conversion.probeConversionDynamicRange(raf: RAFFixture.raf(), filename: "test.RAF")
+        let run = try await camera.conversion.probeConversionDynamicRange(raf: RAFFixture.raf(), filename: "test.RAF")
         XCTAssertTrue(run.report.contains("OUTCOME UNKNOWN"))
         XCTAssertTrue(run.report.contains("RESTORE NOT ATTEMPTED"))
         let writesAfter = await transport.totalWriteCount
@@ -462,7 +467,7 @@ final class DevelopSafetyTests: XCTestCase {
         faults.lostDeleteResponse = true
         let (camera, transport) = await connected(faults)
         let writesBefore = await transport.totalWriteCount
-        let run = await camera.conversion.probeConversionDynamicRange(raf: RAFFixture.raf(), filename: "test.RAF")
+        let run = try await camera.conversion.probeConversionDynamicRange(raf: RAFFixture.raf(), filename: "test.RAF")
         let saved = try XCTUnwrap(run.comparison?.versions.first?.result)
         defer { removeRecovery(saved) }
         XCTAssertTrue(saved.success)

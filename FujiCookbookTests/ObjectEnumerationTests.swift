@@ -133,7 +133,7 @@ final class ObjectCleanupSafetyTests: XCTestCase {
         let original = Data([1, 2, 3])
         let existing = await transport.storeObject(original)
         await transport.queueObjectHandles(.data(nil))
-        let result = await camera.conversion.harvestConversionProfile(raf: Data(repeating: 0x46, count: 64))
+        let result = try await camera.conversion.harvestConversionProfile(raf: Data(repeating: 0x46, count: 64))
         let deleted = await transport.deletedObjectHandles
         let retained = try await transport.getObject(existing)
         XCTAssertEqual(result?.record.uploadOutcome, "accepted", "the read-only profile harvest still uploads")

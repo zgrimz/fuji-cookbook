@@ -25,12 +25,12 @@ final class CameraProbeGatingTests: XCTestCase {
     /// The same promise, for a body that *is* recognized and simply has no slots to select. Already
     /// true via `maySelectSlots`, so this is a guard rather than a fix — the X-T20 that prompted
     /// `supportsSlotProtocol` reached the Property Report, and that must stay a read.
-    func testPropertyReportWritesNothingOnANoSlotProtocolBody() async {
+    func testPropertyReportWritesNothingOnANoSlotProtocolBody() async throws {
         let (m, t) = await connect(.noSlotProtocolBody)
         XCTAssertEqual(m.session.model?.id, "X-T20", "precondition: recognized, not an unknown body")
         let before = await t.totalWriteCount
 
-        let result = await m.diagnostics.probeProperties(slot: 3)
+        let result = try await m.diagnostics.probeProperties(slot: 3)
         let after = await t.totalWriteCount
 
         XCTAssertEqual(after, before, "not one SetDevicePropValue, including the slot select")
@@ -40,12 +40,12 @@ final class CameraProbeGatingTests: XCTestCase {
 
     /// The same assertion `testUnrecognizedBodyIsSweptWithoutASingleWrite` makes about connect, now
     /// made about the diagnostic a tester can reach afterwards.
-    func testPropertyReportWritesNothingOnAnUnrecognizedBody() async {
+    func testPropertyReportWritesNothingOnAnUnrecognizedBody() async throws {
         let (m, t) = await connect(.unknownBody)
         XCTAssertNil(m.session.connected?.model, "precondition: nothing in the registry matched")
         let before = await t.totalWriteCount
 
-        let result = await m.diagnostics.probeProperties(slot: 3)
+        let result = try await m.diagnostics.probeProperties(slot: 3)
         let after = await t.totalWriteCount
         let cameraSlot = await t.currentSlot
 
@@ -66,7 +66,7 @@ final class CameraProbeGatingTests: XCTestCase {
     /// the old rule forbade an eighth selector write to a camera that had already taken seven, and
     /// the tester got the weaker diagnostic for it. `maySelectSlots` is now the single rule both
     /// paths use — see `CameraSession.maySelectSlots`.
-    func testPropertyReportSelectsButWritesNoRecipeOnAGuessedBody() async {
+    func testPropertyReportSelectsButWritesNoRecipeOnAGuessedBody() async throws {
         let (m, t) = await connect(MockCameraFaults(productName: "Demo Camera (no hardware) TETHER"))
         XCTAssertTrue(m.session.connected?.identification.isGuess ?? false, "precondition: matched by name")
         XCTAssertTrue(m.session.connected?.isWritable ?? false, "precondition: granted by its slot read")
@@ -74,7 +74,7 @@ final class CameraProbeGatingTests: XCTestCase {
         XCTAssertEqual(before, m.slotReader.effectiveSlotCount + 1,
                        "precondition: connect already selected every slot to read it, then put the bank back")
 
-        let result = await m.diagnostics.probeProperties(slot: 2)
+        let result = try await m.diagnostics.probeProperties(slot: 2)
         let after = await t.totalWriteCount
 
         XCTAssertEqual(after, before + 2, "the slot select and the restore, and nothing else — no recipe")
@@ -85,12 +85,12 @@ final class CameraProbeGatingTests: XCTestCase {
 
     /// The grain probe writes real candidate values into the property whose encoding is the open
     /// question, so it runs exactly where a push would: on a guess once its slot read has granted it.
-    func testWriteProbeRunsOnAGuessedBodyItsSlotReadGranted() async {
+    func testWriteProbeRunsOnAGuessedBodyItsSlotReadGranted() async throws {
         let (m, t) = await connect(MockCameraFaults(productName: "Demo Camera (no hardware) TETHER"))
         XCTAssertTrue(m.session.connected?.isWritable ?? false, "precondition: granted by its slot read")
         let before = await t.totalWriteCount
 
-        let entries = await m.diagnostics.probeWriteValues(slot: 1, property: .grain, candidates: [1, 2, 3])
+        let entries = try await m.diagnostics.probeWriteValues(slot: 1, property: .grain, candidates: [1, 2, 3])
         let after = await t.totalWriteCount
 
         XCTAssertEqual(entries.count, 3)
@@ -100,12 +100,12 @@ final class CameraProbeGatingTests: XCTestCase {
     /// A body the registry blocks on a recorded failure — the acceptance case that matters. The
     /// write probe must refuse outright: unlike the property report, there is no read-only version
     /// of writing candidate values.
-    func testWriteProbeIsRefusedOnABodyTheRegistryBlocks() async {
+    func testWriteProbeIsRefusedOnABodyTheRegistryBlocks() async throws {
         let (m, t) = await connect(.noSlotProtocolBody)
         XCTAssertFalse(m.session.connected?.isWritable ?? true, "precondition: the X-T20 is blocked")
         let before = await t.totalWriteCount
 
-        let entries = await m.diagnostics.probeWriteValues(slot: 1, property: .grain, candidates: [1, 2, 3])
+        let entries = try await m.diagnostics.probeWriteValues(slot: 1, property: .grain, candidates: [1, 2, 3])
         let after = await t.totalWriteCount
 
         XCTAssertTrue(entries.isEmpty)
@@ -113,21 +113,21 @@ final class CameraProbeGatingTests: XCTestCase {
     }
 
     /// An unlisted body that named itself and whose slot read granted it is probed like any other.
-    func testWriteProbeRunsOnAnUnlistedBodyItsSlotReadGranted() async {
+    func testWriteProbeRunsOnAnUnlistedBodyItsSlotReadGranted() async throws {
         let (m, _) = await connect(.unlistedBody)
         XCTAssertTrue(m.session.connected?.isWritable ?? false, "precondition: granted by its slot read")
 
-        let entries = await m.diagnostics.probeWriteValues(slot: 1, property: .grain, candidates: [1, 2, 3])
+        let entries = try await m.diagnostics.probeWriteValues(slot: 1, property: .grain, candidates: [1, 2, 3])
 
         XCTAssertEqual(entries.count, 3)
     }
 
     /// A body nothing names — no entry, and no firmware in its DeviceInfo — is refused.
-    func testWriteProbeIsRefusedOnAnUnrecognizedBody() async {
+    func testWriteProbeIsRefusedOnAnUnrecognizedBody() async throws {
         let (m, t) = await connect(.unknownBody)
         let before = await t.totalWriteCount
 
-        let entries = await m.diagnostics.probeWriteValues(slot: 1, property: .grain, candidates: [1, 2, 3])
+        let entries = try await m.diagnostics.probeWriteValues(slot: 1, property: .grain, candidates: [1, 2, 3])
         let after = await t.totalWriteCount
 
         XCTAssertTrue(entries.isEmpty)
@@ -136,11 +136,11 @@ final class CameraProbeGatingTests: XCTestCase {
 
     // MARK: Controls — the diagnostics still work where they are allowed to
 
-    func testPropertyReportStillSelectsTheSlotOnATrustedBody() async {
+    func testPropertyReportStillSelectsTheSlotOnATrustedBody() async throws {
         let (m, t) = await connect(MockCameraFaults())
         let before = await t.totalWriteCount
 
-        let result = await m.diagnostics.probeProperties(slot: 4)
+        let result = try await m.diagnostics.probeProperties(slot: 4)
         let after = await t.totalWriteCount
 
         XCTAssertEqual(result.slot, 4, "it went where it was asked")
@@ -152,13 +152,13 @@ final class CameraProbeGatingTests: XCTestCase {
     /// that nonetheless has slots and has them read by selecting each one. The property report now
     /// aims at the slot the tester picked instead of describing whichever slot the camera was left
     /// on — a stronger diagnostic, using a write the connect path had already made seven times.
-    func testPropertyReportSelectsTheSlotOnAnUntestedBodyWithSlots() async {
+    func testPropertyReportSelectsTheSlotOnAnUntestedBodyWithSlots() async throws {
         let (m, t) = await connect(.readOnlyWithSlots)
         XCTAssertEqual(m.session.model?.writeSupport, .untested, "precondition: the GFX100 II has no record")
         XCTAssertTrue(m.session.maySelectSlots, "precondition: and its slots answered")
         let before = await t.totalWriteCount
 
-        let result = await m.diagnostics.probeProperties(slot: 4)
+        let result = try await m.diagnostics.probeProperties(slot: 4)
         let after = await t.totalWriteCount
 
         XCTAssertEqual(result.slot, 4, "it went where the tester asked")
@@ -166,17 +166,17 @@ final class CameraProbeGatingTests: XCTestCase {
         XCTAssertEqual(m.reports.report?.propertySweep?.readOnly, false)
     }
 
-    func testWriteProbeStillRunsOnATrustedBody() async {
+    func testWriteProbeStillRunsOnATrustedBody() async throws {
         let (m, _) = await connect(MockCameraFaults())
 
-        let entries = await m.diagnostics.probeWriteValues(slot: 1, property: .grain, candidates: [2, 1, 3])
+        let entries = try await m.diagnostics.probeWriteValues(slot: 1, property: .grain, candidates: [2, 1, 3])
 
         XCTAssertEqual(entries.count, 3)
     }
 
     // MARK: Mutation-time preflight
 
-    func testGrainProbeStopsWhenSelectionIsIgnoredAfterACleanScan() async {
+    func testGrainProbeStopsWhenSelectionIsIgnoredAfterACleanScan() async throws {
         let (m, t) = await connect(MockCameraFaults())
         XCTAssertEqual(m.slotReader.slots.count, 7, "the prior read was successful")
         let code = FujiPTP.PresetProp.grain.rawValue
@@ -185,7 +185,7 @@ final class CameraProbeGatingTests: XCTestCase {
         let before = await t.totalWriteCount
         await t.ignoreNextWrite(to: FujiPTP.Prop.slotSelector)
 
-        let entries = await m.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1, 3])
+        let entries = try await m.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1, 3])
 
         let after = await t.totalWriteCount
         let selected = await t.currentSlot
@@ -201,13 +201,13 @@ final class CameraProbeGatingTests: XCTestCase {
         } ?? false)
     }
 
-    func testGrainProbeRestoresSelectionWhenItsReadBackFails() async {
+    func testGrainProbeRestoresSelectionWhenItsReadBackFails() async throws {
         let (m, t) = await connect(MockCameraFaults())
         let before = await t.totalWriteCount
         await t.queueRead(.normal, for: FujiPTP.Prop.slotSelector)
         await t.queueRead(.response(0x2002), for: FujiPTP.Prop.slotSelector)
 
-        let entries = await m.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1, 3])
+        let entries = try await m.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1, 3])
 
         let after = await t.totalWriteCount
         let selected = await t.currentSlot
@@ -221,14 +221,14 @@ final class CameraProbeGatingTests: XCTestCase {
         } ?? true, "the saved report proves no grain candidates were sent")
     }
 
-    func testGrainProbeStopsOnATransientOriginalReadFailure() async {
+    func testGrainProbeStopsOnATransientOriginalReadFailure() async throws {
         let (m, t) = await connect(MockCameraFaults())
         let code = FujiPTP.PresetProp.grain.rawValue
         let original = await t.storedProperty(code, slot: 2)
         let before = await t.totalWriteCount
         await t.queueRead(.response(0x2002), for: code)
 
-        let entries = await m.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1, 3])
+        let entries = try await m.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1, 3])
 
         let after = await t.totalWriteCount
         let current = await t.storedProperty(code, slot: 2)
@@ -242,7 +242,7 @@ final class CameraProbeGatingTests: XCTestCase {
         } ?? false)
     }
 
-    func testGrainProbeRequiresAUsableOriginalOnAnOccupiedBank() async {
+    func testGrainProbeRequiresAUsableOriginalOnAnOccupiedBank() async throws {
         let (m, t) = await connect(MockCameraFaults())
         let code = FujiPTP.PresetProp.grain.rawValue
         let original = await t.storedProperty(code, slot: 2)
@@ -251,7 +251,7 @@ final class CameraProbeGatingTests: XCTestCase {
             let before = await t.totalWriteCount
             await t.queueRead(.value(value), for: code)
 
-            let entries = await m.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1, 3])
+            let entries = try await m.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1, 3])
 
             let after = await t.totalWriteCount
             let current = await t.storedProperty(code, slot: 2)
@@ -264,7 +264,7 @@ final class CameraProbeGatingTests: XCTestCase {
         XCTAssertFalse(m.reports.report?.notes.contains { $0.contains("the slot was empty") } ?? true)
     }
 
-    func testMissingGrainAndFilmSimulationDoNotProveAnEmptyBank() async {
+    func testMissingGrainAndFilmSimulationDoNotProveAnEmptyBank() async throws {
         let code = FujiPTP.PresetProp.grain.rawValue
         let (m, t) = await connect(MockCameraFaults(emptyReadCodes: [code, FujiPTP.PresetProp.filmSimulation.rawValue]))
         XCTAssertEqual(m.slotReader.slots.first?.isOccupied, false, "the scan's occupancy bit alone is insufficient")
@@ -276,7 +276,7 @@ final class CameraProbeGatingTests: XCTestCase {
         let original = await t.storedProperty(code, slot: 1)
         let before = await t.totalWriteCount
 
-        let entries = await m.diagnostics.probeWriteValues(slot: 1, property: .grain, candidates: [2, 1, 3])
+        let entries = try await m.diagnostics.probeWriteValues(slot: 1, property: .grain, candidates: [2, 1, 3])
 
         let after = await t.totalWriteCount
         let current = await t.storedProperty(code, slot: 1)
@@ -296,7 +296,7 @@ final class CameraProbeGatingTests: XCTestCase {
         try await t.writeProperty(FujiPTP.Prop.slotSelector, FujiEncoding.packU16(1))
         let before = await t.totalWriteCount
 
-        let entries = await m.diagnostics.probeWriteValues(slot: 3, property: .grain, candidates: [2, 1, 3])
+        let entries = try await m.diagnostics.probeWriteValues(slot: 3, property: .grain, candidates: [2, 1, 3])
 
         let after = await t.totalWriteCount
         let selected = await t.currentSlot
@@ -306,9 +306,9 @@ final class CameraProbeGatingTests: XCTestCase {
         XCTAssertTrue(m.reports.report?.notes.contains { $0.contains("does not establish an empty bank") } ?? false)
     }
 
-    func testGrainProbeRefusesMissingOriginalsEvenWhenEveryReadIsEmpty() async {
+    func testGrainProbeRefusesMissingOriginalsEvenWhenEveryReadIsEmpty() async throws {
         let (m, t) = await connect(MockCameraFaults(startsWithEmptySlots: true))
-        let entries = await m.diagnostics.probeWriteValues(slot: 3, property: .grain, candidates: [2, 1, 3])
+        let entries = try await m.diagnostics.probeWriteValues(slot: 3, property: .grain, candidates: [2, 1, 3])
         let selected = await t.currentSlot
         let actual = await t.storedProperty(FujiPTP.PresetProp.grain.rawValue, slot: 3)
         XCTAssertTrue(entries.isEmpty)
@@ -327,33 +327,34 @@ final class CameraProbeGatingTests: XCTestCase {
     /// The grain probe is held at its first candidate write, with C2 selected, so the report is
     /// asked for while the loop is provably in flight. Started side by side, the first can finish
     /// before the second begins, and two probes in sequence are not the race the gate exists for.
-    func testAProbeCannotStartWhileAnotherIsRunning() async {
+    func testAProbeCannotStartWhileAnotherIsRunning() async throws {
         let (m, t) = await connect(MockCameraFaults())
         let slotBefore = await t.currentSlot
         let held = expectation(description: "the grain probe reaches its first candidate write")
         await t.holdNextWrite(to: FujiPTP.PresetProp.grain.rawValue) { held.fulfill() }
 
-        let grain = Task { await m.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1, 3, 6, 4]) }
+        let grain = Task { try await m.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1, 3, 6, 4]) }
         await fulfillment(of: [held], timeout: 10)
         let slotMidLoop = await t.currentSlot
         let writesMidLoop = await t.totalWriteCount
 
-        let refused = await m.diagnostics.probeProperties(slot: 5)
+        let refused = await busyRefusal { () async throws(CameraBusy) in try await m.diagnostics.probeProperties(slot: 5) }
 
         let slotAfterRefusal = await t.currentSlot
         let writesAfterRefusal = await t.totalWriteCount
         XCTAssertEqual(slotMidLoop, 2, "precondition: held inside the loop, with the probe's bank selected")
-        XCTAssertTrue(refused.probes.isEmpty, "the report is refused while the grain probe is running")
+        XCTAssertEqual(refused, CameraBusy(runningOperation: "\(FujiPTP.PresetProp.grain.debugName) write probe"),
+                       "the report is refused while the grain probe is running")
         XCTAssertEqual(writesAfterRefusal, writesMidLoop, "and writes nothing, not even the slot select")
         XCTAssertEqual(slotAfterRefusal, 2, "so the selector is still where the probe put it")
 
         await t.releaseHeldWrite()
-        let entries = await grain.value
+        let entries = try await grain.value
         let slotAfter = await t.currentSlot
         XCTAssertEqual(entries.map(\.wrote), [2, 1, 3, 6, 4], "the held probe finishes every candidate")
         XCTAssertEqual(slotAfter, slotBefore, "and puts back the bank it borrowed")
 
-        let report = await m.diagnostics.probeProperties(slot: 5)
+        let report = try await m.diagnostics.probeProperties(slot: 5)
         XCTAssertFalse(report.probes.isEmpty, "the gate opens again once the probe is done, so it was the gate")
     }
 
@@ -363,10 +364,16 @@ final class CameraProbeGatingTests: XCTestCase {
         let (m, _) = await connect(MockCameraFaults())
         let occupied = m.slotReader.slots.filter(\.isOccupied).count
 
-        async let a = m.slotReader.requestRefresh()
-        async let b = m.slotReader.requestRefresh()
+        func read() async -> Result<WalkResult?, CameraBusy> {
+            do throws(CameraBusy) { return .success(try await m.slotReader.requestRefresh()) } catch { return .failure(error) }
+        }
+        async let a = read()
+        async let b = read()
         let results = await [a, b]
-        XCTAssertEqual(results.filter { $0 != nil }.count, 1, "Only the accepted read may be used as fresh evidence")
+        XCTAssertEqual(results.filter { (try? $0.get()) != nil }.count, 1,
+                       "Only the accepted read may be used as fresh evidence")
+        XCTAssertEqual(results.filter { $0 == .failure(CameraBusy(runningOperation: "refresh slots")) }.count, 1,
+                       "and the other is the gate's refusal")
 
         XCTAssertEqual(m.slotReader.slots.count, 7, "one clean read, not two interleaved ones")
         XCTAssertEqual(m.slotReader.slots.filter(\.isOccupied).count, occupied)
@@ -383,17 +390,18 @@ final class CameraProbeGatingTests: XCTestCase {
 
         let refused = results.filter { $0.outcome == .notWritten }
         XCTAssertEqual(refused.count, 1, "exactly one push was let through")
+        XCTAssertNotNil(refused.first?.refusedBy, "and the other says the gate refused it")
         XCTAssertTrue(refused.first?.errorMessage?.contains("still running") ?? false,
-                      "and the other says why: \(refused.first?.errorMessage ?? "nil")")
+                      "in words: \(refused.first?.errorMessage ?? "nil")")
     }
 
     // MARK: Controls — the gate must not break the normal path
 
-    func testProbesStillRunOneAfterTheOther() async {
+    func testProbesStillRunOneAfterTheOther() async throws {
         let (m, _) = await connect(MockCameraFaults())
 
-        let first = await m.diagnostics.probeProperties(slot: 2)
-        let second = await m.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1])
+        let first = try await m.diagnostics.probeProperties(slot: 2)
+        let second = try await m.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1])
 
         XCTAssertFalse(first.probes.isEmpty)
         XCTAssertEqual(second.count, 2)
@@ -403,7 +411,7 @@ final class CameraProbeGatingTests: XCTestCase {
         let (m, t) = await connect(MockCameraFaults())
         let writesBefore = await t.totalWriteCount
 
-        await m.slotReader.requestRefresh()
+        try await m.slotReader.requestRefresh()
 
         XCTAssertEqual(m.slotReader.slots.count, 7)
         // It actually re-read rather than being quietly refused: seven more slot selects went out,
@@ -411,12 +419,12 @@ final class CameraProbeGatingTests: XCTestCase {
         let writesAfter = await t.totalWriteCount
         XCTAssertEqual(writesAfter - writesBefore, 7 + 1)
     }
-    func testLostCandidateReplyStopsProbeAndDefersRecoveryWrites() async {
+    func testLostCandidateReplyStopsProbeAndDefersRecoveryWrites() async throws {
         var faults = MockCameraFaults()
         faults.lostWriteResponseCodes = [FujiPTP.PresetProp.grain.rawValue]
         let (manager, transport) = await connect(faults)
         let before = await transport.totalWriteCount
-        let entries = await manager.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1, 3])
+        let entries = try await manager.diagnostics.probeWriteValues(slot: 2, property: .grain, candidates: [2, 1, 3])
         let after = await transport.totalWriteCount
         let held = await transport.storedProperty(FujiPTP.PresetProp.grain.rawValue, slot: 2)
         XCTAssertEqual(entries.count, 1)
@@ -453,7 +461,7 @@ final class CameraProbeGatingTests: XCTestCase {
     /// `connect` reports `.connected` before its own slot read has finished, and that read selects
     /// every slot in turn. A push or a probe started in that window is refused, not interleaved
     /// with the walk: interleaved, it would write into whichever slot the walk had just selected.
-    func testNothingElseCanStartDuringTheConnectTimeSlotRead() async {
+    func testNothingElseCanStartDuringTheConnectTimeSlotRead() async throws {
         var faults = MockCameraFaults()
         faults.isInstant = true
         let transport = MockCameraTransport(faults: faults)
@@ -465,18 +473,20 @@ final class CameraProbeGatingTests: XCTestCase {
         XCTAssertTrue(manager.session.isConnected, "precondition: the session reads as connected while its slot read runs")
         let writesMidWalk = await transport.totalWriteCount
 
-        let probe = await manager.diagnostics.probeProperties(slot: 3)
+        let probe = await busyRefusal { () async throws(CameraBusy) in try await manager.diagnostics.probeProperties(slot: 3) }
         let push = await manager.slotWriter.push(settings: RecipeSettings(filmSimulation: .velvia), name: "Mid-walk", toSlot: 3)
         let writesAfterRefusals = await transport.totalWriteCount
-        XCTAssertTrue(probe.probes.isEmpty, "the property report is refused while the connect-time read is walking the slots")
-        XCTAssertEqual(push.outcome, .notWritten, "and so is a push")
+        let walk = CameraBusy(runningOperation: "refresh slots")
+        XCTAssertEqual(probe, walk, "the property report is refused while the connect-time read is walking the slots")
+        XCTAssertEqual(push.refusedBy, walk, "and so is a push")
+        XCTAssertEqual(push.outcome, .notWritten)
         XCTAssertEqual(writesAfterRefusals, writesMidWalk, "neither wrote anything, not even a slot select")
 
         await transport.releaseHeldWrite()
         await connect.value
         XCTAssertEqual(manager.session.status, .connected)
         XCTAssertEqual(manager.slotReader.slots.count, 7, "the walk finished as one clean read")
-        let report = await manager.diagnostics.probeProperties(slot: 3)
+        let report = try await manager.diagnostics.probeProperties(slot: 3)
         XCTAssertFalse(report.probes.isEmpty, "and the gate opens again once the walk is done")
     }
 

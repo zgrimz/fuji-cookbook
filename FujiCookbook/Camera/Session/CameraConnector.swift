@@ -415,15 +415,17 @@ final class CameraConnector {
             // while the walk is still selecting slots is refused rather than interleaved with it.
             // The gate was taken back for this session when the epoch advanced, and nothing can
             // claim it before this call, so a refusal here is a broken invariant — reported, not
-            // ignored. A `false` with the gate free is the transport gone mid-connect, which the
-            // loss handler owns.
-            let read = await slotReader.requestRefresh()
-            guard session.epoch.isCurrent(e, "post-refreshSlots") else { return }
-            if read == nil, let holder = gate.runningOperation {
-                CameraLog.error("Connect: the slot read was refused — \(holder) is still running")
+            // ignored. A nil read is the transport gone mid-connect, which the loss handler owns.
+            let read: WalkResult?
+            do throws(CameraBusy) {
+                read = try await slotReader.requestRefresh()
+            } catch {
+                guard session.epoch.isCurrent(e, "post-refreshSlots") else { return }
+                CameraLog.error("Connect: the slot read was refused — \(error.runningOperation) is still running")
                 status = .failed("Another camera operation is still running. Disconnect and connect again.")
                 return
             }
+            guard session.epoch.isCurrent(e, "post-refreshSlots") else { return }
             // What the body answered, filed where the identification and the registry's word already
             // are, so the four stay four fields (`ObservedCapabilities`), and the decision made from
             // all three. Only now can a body the registry doesn't vouch for be granted.

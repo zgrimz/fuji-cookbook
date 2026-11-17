@@ -1,5 +1,18 @@
 import Foundation
 
+/// `CameraOperationGate` refused an operation because another one held the camera. The refused
+/// operation never started, so nothing was sent for it.
+struct CameraBusy: Error, Equatable {
+    /// The label of the operation that held the gate.
+    let runningOperation: String
+}
+
+extension CameraBusy: LocalizedError {
+    var errorDescription: String? {
+        "The camera is busy with another operation (\(runningOperation)), so nothing was sent. Try again when it finishes."
+    }
+}
+
 /// Lets one camera operation run at a time.
 ///
 /// Every operation that changes camera state runs under it. The slot operations write
@@ -25,12 +38,13 @@ final class CameraOperationGate {
     /// is still the current one.
     private var claim = 0
 
-    /// Run `body` only if no other operation holds the gate; otherwise refuse and return nil.
-    /// Not reentrant: a call from inside `body` is refused like any other.
-    func run<T>(_ label: String, _ body: () async -> T) async -> T? {
+    /// Run `body` only if no other operation holds the gate; otherwise throw `CameraBusy` naming
+    /// the operation that holds it, without running `body`. Not reentrant: a call from inside
+    /// `body` is refused like any other.
+    func run<T>(_ label: String, _ body: () async -> T) async throws(CameraBusy) -> T {
         if let inFlight = runningOperation {
             CameraLog.error("Camera: refused \(label) — \(inFlight) is still running")
-            return nil
+            throw CameraBusy(runningOperation: inFlight)
         }
         claim &+= 1
         let mine = claim

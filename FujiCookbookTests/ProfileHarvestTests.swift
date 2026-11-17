@@ -52,7 +52,7 @@ final class ProfileHarvestTests: XCTestCase {
         XCTAssertFalse(m.session.canConvert, "the registry does not develop on this body")
         XCTAssertTrue(m.conversion.canHarvestProfile, "and that is not what the harvest asks")
 
-        let harvested = await m.conversion.harvestConversionProfile(raf: raf)
+        let harvested = try await m.conversion.harvestConversionProfile(raf: raf)
         let outcome = try XCTUnwrap(harvested)
 
         XCTAssertEqual(outcome.record.uploadOutcome, "accepted")
@@ -66,7 +66,7 @@ final class ProfileHarvestTests: XCTestCase {
     /// became a profile once the camera had something to describe.
     func testTheRecordShowsTheRefusalBeforeAndTheProfileAfter() async throws {
         let m = await connected(noKitchenBody)
-        let harvested = await m.conversion.harvestConversionProfile(raf: raf)
+        let harvested = try await m.conversion.harvestConversionProfile(raf: raf)
         let outcome = try XCTUnwrap(harvested)
 
         XCTAssertTrue(outcome.record.profileBeforeUpload?.contains("0x2002") == true,
@@ -76,7 +76,7 @@ final class ProfileHarvestTests: XCTestCase {
 
     func testTheHarvestNeverDevelops() async throws {
         let m = await connected(noKitchenBody)
-        let harvested = await m.conversion.harvestConversionProfile(raf: raf)
+        let harvested = try await m.conversion.harvestConversionProfile(raf: raf)
         _ = try XCTUnwrap(harvested)
 
         XCTAssertEqual(count(m, "0x900C"), 1, "one SendObjectInfo")
@@ -93,23 +93,23 @@ final class ProfileHarvestTests: XCTestCase {
     /// gate is identification, not capability, so a guess is refused either way. (It also has to
     /// stay this body — "FUJIFILM GFX 100 TETHER" resolves to `.unknown` rather than a guess, which
     /// would be a different test.)
-    func testAGuessedBodyIsNotHarvested() async {
+    func testAGuessedBodyIsNotHarvested() async throws {
         let m = await connected(MockCameraFaults(productName: "FUJIFILM GFX100S TETHER", firmwareVersion: "2.13"))
         XCTAssertEqual(m.session.model?.id, "GFX100S", "matched by name pattern")
         XCTAssertFalse(m.conversion.canHarvestProfile, "a guess reads; it does not get a RAF sent to it")
 
-        let outcome = await m.conversion.harvestConversionProfile(raf: raf)
+        let outcome = try await m.conversion.harvestConversionProfile(raf: raf)
         XCTAssertNil(outcome)
         XCTAssertEqual(count(m, "0x900C"), 0, "and nothing went over the wire")
     }
 
     /// The gate is about trust, not about conversion being enabled — a body the app already
     /// develops on may be harvested too, it just won't be offered.
-    func testAConvertingBodyMayBeHarvestedAsWell() async {
+    func testAConvertingBodyMayBeHarvestedAsWell() async throws {
         let m = await connected(MockCameraFaults())
         XCTAssertTrue(m.session.canConvert)
         XCTAssertTrue(m.conversion.canHarvestProfile)
-        let harvested = await m.conversion.harvestConversionProfile(raf: raf)
+        let harvested = try await m.conversion.harvestConversionProfile(raf: raf)
         XCTAssertNotNil(harvested)
     }
 
@@ -119,7 +119,7 @@ final class ProfileHarvestTests: XCTestCase {
         var faults = noKitchenBody
         faults.rejectsUpload = 0x2002
         let m = await connected(faults)
-        let harvested = await m.conversion.harvestConversionProfile(raf: raf)
+        let harvested = try await m.conversion.harvestConversionProfile(raf: raf)
         let outcome = try XCTUnwrap(harvested)
 
         XCTAssertEqual(outcome.record.failureReason, "upload_general_error")
@@ -135,7 +135,7 @@ final class ProfileHarvestTests: XCTestCase {
         faults.profileNeedsUpload = false
         faults.unsupportedReadCodes = [FujiPTP.Prop.rawConvProfile]
         let m = await connected(faults)
-        let harvested = await m.conversion.harvestConversionProfile(raf: raf)
+        let harvested = try await m.conversion.harvestConversionProfile(raf: raf)
         let outcome = try XCTUnwrap(harvested)
 
         XCTAssertEqual(outcome.record.uploadOutcome, "accepted", "the upload itself was fine")
@@ -151,7 +151,7 @@ final class ProfileHarvestTests: XCTestCase {
         var faults = noKitchenBody
         faults.uploadCreatesObject = true
         let m = await connected(faults)
-        let harvested = await m.conversion.harvestConversionProfile(raf: raf)
+        let harvested = try await m.conversion.harvestConversionProfile(raf: raf)
         let outcome = try XCTUnwrap(harvested)
 
         XCTAssertEqual(outcome.record.uploadCreatedObject, true)
@@ -162,7 +162,7 @@ final class ProfileHarvestTests: XCTestCase {
 
     func testAnUploadThatLeavesNoObjectSaysSo() async throws {
         let m = await connected(noKitchenBody)
-        let harvested = await m.conversion.harvestConversionProfile(raf: raf)
+        let harvested = try await m.conversion.harvestConversionProfile(raf: raf)
         let outcome = try XCTUnwrap(harvested)
 
         XCTAssertEqual(outcome.record.uploadCreatedObject, false)
@@ -178,7 +178,7 @@ final class ProfileHarvestTests: XCTestCase {
         }())
         let m = CameraServices()
         await m.connector.connectDemo(using: transport)
-        let harvested = await m.conversion.harvestConversionProfile(raf: raf)
+        let harvested = try await m.conversion.harvestConversionProfile(raf: raf)
         _ = try XCTUnwrap(harvested)
 
         XCTAssertEqual(CameraReportStore.loadLatest()?.profileHarvests?.count, 1,

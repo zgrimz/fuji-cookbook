@@ -668,13 +668,13 @@ final class CompatibilityReportTests: XCTestCase {
     /// report, the push, the restore and the develop all arm the trace; this didn't. The summary
     /// says "reads back 6", which is a *decoded* guess; on the body whose encoding differs, the
     /// bytes are the evidence.
-    func testTheWriteProbeLeavesItsTransactionsInTheReport() async {
+    func testTheWriteProbeLeavesItsTransactionsInTheReport() async throws {
         let transport = MockCameraTransport(faults: MockCameraFaults(isInstant: true))
         let m = CameraServices()
         await m.connector.connectDemo(using: transport)
         let before = m.reports.report?.transactions.count ?? 0
 
-        _ = await m.diagnostics.probeWriteValues(slot: 1, property: .grain,
+        _ = try await m.diagnostics.probeWriteValues(slot: 1, property: .grain,
                                      candidates: CameraDiagnostics.grainProbeCandidates)
 
         let after = m.reports.report?.transactions ?? []
@@ -686,13 +686,13 @@ final class CompatibilityReportTests: XCTestCase {
     /// The probe promises to put the value back, so the *saved* copy of the report has to hold the
     /// restore. The recorder's `persist()` is what snapshots the trace, so it must run after the
     /// restore; the in-memory trace is complete either way, which is why the test above can't tell.
-    func testTheSavedReportProvesTheProbeRestoredTheValue() async {
+    func testTheSavedReportProvesTheProbeRestoredTheValue() async throws {
         CameraReportStore.deleteLatest()
         let transport = MockCameraTransport(faults: MockCameraFaults(isInstant: true))
         let m = CameraServices()
         await m.connector.connectDemo(using: transport)
 
-        _ = await m.diagnostics.probeWriteValues(slot: 1, property: .grain,
+        _ = try await m.diagnostics.probeWriteValues(slot: 1, property: .grain,
                                      candidates: CameraDiagnostics.grainProbeCandidates)
 
         let saved = CameraReportStore.loadLatest()
@@ -748,11 +748,11 @@ final class CompatibilityReportTests: XCTestCase {
     /// A report holds exactly one property sweep, and the write pass's power cycle rebuilds the
     /// report — so a tester who ran Part One and then Part Two used to arrive with a record saying
     /// "ran on C1 — 26 properties" and no sweep in the report at all.
-    func testThePropertySweepSurvivesTheReconnectToo() async {
+    func testThePropertySweepSurvivesTheReconnectToo() async throws {
         let transport = MockCameraTransport(faults: MockCameraFaults(isInstant: true))
         let m = CameraServices()
         await m.connector.connectDemo(using: transport)
-        _ = await m.diagnostics.probeProperties(slot: 1)
+        _ = try await m.diagnostics.probeProperties(slot: 1)
         let entries = m.reports.report?.propertySweep?.entries.count ?? 0
         XCTAssertGreaterThan(entries, 0)
 
@@ -763,16 +763,16 @@ final class CompatibilityReportTests: XCTestCase {
     }
 
     /// But a sweep this connect actually ran describes the camera as it is now, and must win.
-    func testAFreshSweepIsNotOverwrittenByTheAdoptedOne() async {
+    func testAFreshSweepIsNotOverwrittenByTheAdoptedOne() async throws {
         let transport = MockCameraTransport(faults: MockCameraFaults(isInstant: true))
         let m = CameraServices()
         await m.connector.connectDemo(using: transport)
-        _ = await m.diagnostics.probeProperties(slot: 1)
+        _ = try await m.diagnostics.probeProperties(slot: 1)
         XCTAssertEqual(m.reports.report?.propertySweep?.slot, 1)
 
         await m.connector.disconnect()
         await m.connector.connectDemo(using: transport)
-        _ = await m.diagnostics.probeProperties(slot: 3)
+        _ = try await m.diagnostics.probeProperties(slot: 3)
         XCTAssertEqual(m.reports.report?.propertySweep?.slot, 3,
                        "the newer sweep is the live one, not the carried-over C1")
     }

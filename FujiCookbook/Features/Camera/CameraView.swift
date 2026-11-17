@@ -166,7 +166,8 @@ struct CameraView: View {
             .sheet(isPresented: $showingConnectionLog) { NavigationStack { ConnectionLogView() } }
             // `requestRefresh()`, not `refresh()`: `connect` reports `.connected` before it
             // awaits its own slot read, so this is pullable while that read is still walking slots.
-            .refreshable { if camera.session.isConnected { await camera.slotReader.requestRefresh() } }
+            // A refused refresh leaves the screen as it was; the gate logs the refusal.
+            .refreshable { if camera.session.isConnected { _ = try? await camera.slotReader.requestRefresh() } }
         }
     }
 

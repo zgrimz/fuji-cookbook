@@ -51,10 +51,10 @@ final class CameraDiagnostics {
     /// already had selected.
     ///
     /// Returns the slot it actually read, which is not always the one it was asked for. The probes
-    /// are empty, beside the requested slot, when another operation held the gate, no camera is
-    /// connected or the slot select failed.
-    func probeProperties(slot: Int) async -> (slot: Int, probes: [PropertyProbe]) {
-        await gate.run("property report") { await self.probePropertiesExclusively(slot: slot) } ?? (slot, [])
+    /// are empty, beside the requested slot, when no camera is connected or the slot select failed.
+    /// Throws `CameraBusy`, having sent nothing, when another operation held the gate.
+    func probeProperties(slot: Int) async throws(CameraBusy) -> (slot: Int, probes: [PropertyProbe]) {
+        try await gate.run("property report") { await self.probePropertiesExclusively(slot: slot) }
     }
 
     private func probePropertiesExclusively(slot: Int) async -> (slot: Int, probes: [PropertyProbe]) {
@@ -172,10 +172,11 @@ final class CameraDiagnostics {
     /// doubt about either in the report.
     ///
     /// Returns one entry per candidate tried. Empty means no candidate was written: the body was
-    /// refused, another operation held the gate, or a precondition failed (the report notes which).
+    /// refused or a precondition failed (the report notes which). Throws `CameraBusy`, having sent
+    /// nothing, when another operation held the gate.
     func probeWriteValues(slot: Int, property: FujiPTP.PresetProp,
-                          candidates: [Int]) async -> [WriteProbeEntry] {
-        await gate.run("\(property.debugName) write probe") {
+                          candidates: [Int]) async throws(CameraBusy) -> [WriteProbeEntry] {
+        try await gate.run("\(property.debugName) write probe") {
             // Refused, not degraded as the property report is: this writes real candidate values to
             // a real slot, and without the check a diagnostic tool would issue writes to any body
             // that happened to be plugged in, including one the app had just told the user it would
@@ -187,7 +188,7 @@ final class CameraDiagnostics {
             }
             return await self.probeWriteValuesExclusively(on: transport, permission: permission, slot: slot,
                                                           property: property, candidates: candidates)
-        } ?? []
+        }
     }
 
     /// `permission` is what makes a write probe legitimate; `probeWriteValues` is the only caller.

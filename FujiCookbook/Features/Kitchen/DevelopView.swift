@@ -244,7 +244,13 @@ struct DevelopView: View {
                 probeReport = "Couldn't read that file."
                 return
             }
-            let run = await camera.conversion.probeConversionDynamicRange(raf: data, filename: raf.filename)
+            let run: RawConversionService.ConversionProbeRun
+            do throws(CameraBusy) {
+                run = try await camera.conversion.probeConversionDynamicRange(raf: data, filename: raf.filename)
+            } catch {
+                probeReport = "D185 DR probe wasn't started. \(error.localizedDescription)"
+                return
+            }
             probeReport = run.report
             // Preview resolution, so `fullResolution: false` — the versions are labelled
             // "Comparison preview" in the viewer, which is what they are.

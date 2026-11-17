@@ -74,11 +74,13 @@ final class SlotWriter {
     @discardableResult
     func push(settings: RecipeSettings, name: String, toSlot slot: Int,
               progress: String = "") async -> SlotWriteResult {
-        await gate.run("push to C\(slot)") {
-            await self.pushExclusively(settings: settings, name: name, toSlot: slot, progress: progress)
-        } ?? SlotWriteResult(slot: slot, outcome: .notWritten, nameWritten: false, nameApplied: nil,
-                             clampedFields: [], fields: [],
-                             errorMessage: "Another camera operation is still running. Nothing was written.")
+        do throws(CameraBusy) {
+            return try await gate.run("push to C\(slot)") {
+                await self.pushExclusively(settings: settings, name: name, toSlot: slot, progress: progress)
+            }
+        } catch {
+            return .refused(slot: slot, by: error)
+        }
     }
 
     /// `push` minus the gate, so `pushBatch` can hold it across the whole batch rather than
@@ -125,11 +127,13 @@ final class SlotWriter {
     /// which `RestoreView` shows before the user confirms.
     @discardableResult
     func restore(_ saved: [UInt16: Data], name: String, toSlot slot: Int) async -> SlotWriteResult {
-        await gate.run("restore C\(slot)") {
-            await self.restoreExclusively(saved, name: name, toSlot: slot)
-        } ?? SlotWriteResult(slot: slot, outcome: .notWritten, nameWritten: false, nameApplied: nil,
-                             clampedFields: [], fields: [],
-                             errorMessage: "Another camera operation is still running. Nothing was written.")
+        do throws(CameraBusy) {
+            return try await gate.run("restore C\(slot)") {
+                await self.restoreExclusively(saved, name: name, toSlot: slot)
+            }
+        } catch {
+            return .refused(slot: slot, by: error)
+        }
     }
 
     private func restoreExclusively(_ saved: [UInt16: Data], name: String,
@@ -853,40 +857,49 @@ final class SlotWriter {
 
     /// Holds the gate across the whole batch: slots written in sequence are one operation as far as
     /// the camera is concerned, and letting anything else select a slot between items is the interleave
-    /// this gate exists to prevent.
+    /// this gate exists to prevent. A batch the gate refuses answers one refused result per item.
     func pushBatch(_ items: [(settings: RecipeSettings, name: String, slot: Int)]) async -> [SlotWriteResult] {
-        await gate.run("push to \(items.count) slot(s)") {
-            let sessionEpoch = self.session.epoch.current
-            var results: [SlotWriteResult] = []
-            let total = items.count
-            self.pushProgress = BatchProgress(completed: 0, total: total)
-            for (i, item) in items.enumerated() {
-                let progress = total > 1 ? "(\(i + 1) of \(total)) " : ""
-                let result = await self.pushExclusively(settings: item.settings, name: item.name,
-                                                       toSlot: item.slot, progress: progress)
-                results.append(result)
-                func remaining(_ reason: String) -> [SlotWriteResult] {
-                    items.dropFirst(i + 1).map {
-                        SlotWriteResult(slot: $0.slot, outcome: .notWritten, nameWritten: false,
-                                        nameApplied: nil, clampedFields: [], fields: [], errorMessage: reason)
-                    }
-                }
-                guard self.session.operationIsCurrent(sessionEpoch) else {
-                    return results + remaining("The camera session changed before this bank was started. Nothing was written to it.")
-                }
-                // A command without a valid completion may have changed the camera. Do not
-                // resume mutations at the next bank. An accepted write whose read-back alone
-                // is unavailable remains a separate, unverified observation.
-                if result.nameOutcome == .outcomeUnknown || result.fields.contains(where: { $0.outcome == .outcomeUnknown }) {
-                    results += remaining("An earlier bank has an unconfirmed write. This bank was not started; reconnect and check the earlier bank before trying again.")
-                    break
-                }
-                self.pushProgress = BatchProgress(completed: i + 1, total: total)
+        do throws(CameraBusy) {
+            return try await gate.run("push to \(items.count) slot(s)") {
+                await self.pushBatchExclusively(items)
             }
-            self.lastWriteResults = results
-            self.pushProgress = nil
-            return results
-        } ?? []
+        } catch {
+            return items.map { .refused(slot: $0.slot, by: error) }
+        }
+    }
+
+    private func pushBatchExclusively(_ items: [(settings: RecipeSettings, name: String, slot: Int)]) async
+        -> [SlotWriteResult] {
+        let sessionEpoch = self.session.epoch.current
+        var results: [SlotWriteResult] = []
+        let total = items.count
+        self.pushProgress = BatchProgress(completed: 0, total: total)
+        for (i, item) in items.enumerated() {
+            let progress = total > 1 ? "(\(i + 1) of \(total)) " : ""
+            let result = await self.pushExclusively(settings: item.settings, name: item.name,
+                                                   toSlot: item.slot, progress: progress)
+            results.append(result)
+            func remaining(_ reason: String) -> [SlotWriteResult] {
+                items.dropFirst(i + 1).map {
+                    SlotWriteResult(slot: $0.slot, outcome: .notWritten, nameWritten: false,
+                                    nameApplied: nil, clampedFields: [], fields: [], errorMessage: reason)
+                }
+            }
+            guard self.session.operationIsCurrent(sessionEpoch) else {
+                return results + remaining("The camera session changed before this bank was started. Nothing was written to it.")
+            }
+            // A command without a valid completion may have changed the camera. Do not
+            // resume mutations at the next bank. An accepted write whose read-back alone
+            // is unavailable remains a separate, unverified observation.
+            if result.nameOutcome == .outcomeUnknown || result.fields.contains(where: { $0.outcome == .outcomeUnknown }) {
+                results += remaining("An earlier bank has an unconfirmed write. This bank was not started; reconnect and check the earlier bank before trying again.")
+                break
+            }
+            self.pushProgress = BatchProgress(completed: i + 1, total: total)
+        }
+        self.lastWriteResults = results
+        self.pushProgress = nil
+        return results
     }
 
     // MARK: - The staged first write

@@ -436,20 +436,20 @@ final class PushAuditTests: XCTestCase {
 
     /// The property report selects the slot the tester asked about, reads it, and puts the bank
     /// back. The report it produces still names the slot it read.
-    func testThePropertyReportPutsTheSelectedBankBack() async {
+    func testThePropertyReportPutsTheSelectedBankBack() async throws {
         let (m, t) = await connect(MockCameraFaults())
         let before = await selectorNow(t)
-        let result = await m.diagnostics.probeProperties(slot: 2)
+        let result = try await m.diagnostics.probeProperties(slot: 2)
         XCTAssertEqual(result.slot, 2, "it read the slot it was asked to")
         let now = await selectorNow(t)
         XCTAssertEqual(now, before, "and the camera is back on the bank it was on")
     }
 
     /// The grain probe selects a slot, writes candidates, restores the property — and now the bank.
-    func testTheGrainProbePutsTheSelectedBankBack() async {
+    func testTheGrainProbePutsTheSelectedBankBack() async throws {
         let (m, t) = await connect(MockCameraFaults())
         let before = await selectorNow(t)
-        let entries = await m.diagnostics.probeWriteValues(slot: 2, property: FujiPTP.PresetProp.grain, candidates: [1, 2])
+        let entries = try await m.diagnostics.probeWriteValues(slot: 2, property: FujiPTP.PresetProp.grain, candidates: [1, 2])
         XCTAssertFalse(entries.isEmpty, "precondition: the probe ran")
         let now = await selectorNow(t)
         XCTAssertEqual(now, before)

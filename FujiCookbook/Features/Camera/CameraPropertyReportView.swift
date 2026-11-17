@@ -36,6 +36,9 @@ struct CameraPropertyReportView: View {
     @State private var drProbe: ProbeRun?
     @State private var isProbingDR = false
 
+    /// The last run the operation gate refused, which sent the camera nothing.
+    @State private var refusal: CameraBusy?
+
     /// Nil when the app has no idea how many slots this body has — the unrecognized-body state,
     /// where a picker would offer slots that may not exist on a camera the app never selects a slot
     /// on.
@@ -55,6 +58,14 @@ struct CameraPropertyReportView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                if let refusal {
+                    Text(refusal.localizedDescription)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.ink2)
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .themedCard(cornerRadius: 16)
+                }
                 if let lastRead, !isRunning {
                     if lastRead.probes.isEmpty {
                         Text("The camera returned nothing. If the session dropped, reconnect and try again.")
@@ -266,10 +277,16 @@ struct CameraPropertyReportView: View {
         guard !isProbingGrain else { return }
         isProbingGrain = true
         let probedSlot = slot
+        refusal = nil
         Task {
-            let entries = await camera.diagnostics.probeWriteValues(slot: probedSlot, property: .grain,
-                                                                    candidates: CameraDiagnostics.grainProbeCandidates)
-            grainProbe = ProbeRun(slot: probedSlot, entries: entries)
+            do throws(CameraBusy) {
+                let entries = try await camera.diagnostics.probeWriteValues(
+                    slot: probedSlot, property: .grain, candidates: CameraDiagnostics.grainProbeCandidates)
+                grainProbe = ProbeRun(slot: probedSlot, entries: entries)
+            } catch {
+                grainProbe = nil
+                refusal = error
+            }
             isProbingGrain = false
         }
     }
@@ -316,10 +333,16 @@ struct CameraPropertyReportView: View {
         guard !isProbingDR else { return }
         isProbingDR = true
         let probedSlot = slot
+        refusal = nil
         Task {
-            let entries = await camera.diagnostics.probeWriteValues(
-                slot: probedSlot, property: .dynamicRange, candidates: CameraDiagnostics.dynamicRangeProbeCandidates)
-            drProbe = ProbeRun(slot: probedSlot, entries: entries)
+            do throws(CameraBusy) {
+                let entries = try await camera.diagnostics.probeWriteValues(
+                    slot: probedSlot, property: .dynamicRange, candidates: CameraDiagnostics.dynamicRangeProbeCandidates)
+                drProbe = ProbeRun(slot: probedSlot, entries: entries)
+            } catch {
+                drProbe = nil
+                refusal = error
+            }
             isProbingDR = false
         }
     }
@@ -327,9 +350,15 @@ struct CameraPropertyReportView: View {
     private func readProperties() {
         guard !isRunning else { return }
         isRunning = true
+        refusal = nil
         Task {
-            let result = await camera.diagnostics.probeProperties(slot: slot)
-            lastRead = Read(slot: result.slot, probes: result.probes)
+            do throws(CameraBusy) {
+                let result = try await camera.diagnostics.probeProperties(slot: slot)
+                lastRead = Read(slot: result.slot, probes: result.probes)
+            } catch {
+                lastRead = nil
+                refusal = error
+            }
             isRunning = false
         }
     }

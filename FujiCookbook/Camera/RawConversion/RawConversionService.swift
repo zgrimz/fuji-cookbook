@@ -107,19 +107,21 @@ final class RawConversionService {
     func cook(raf: Data, filename: String, settings: RecipeSettings,
               progress: String = "", fullResolution: Bool = true,
               recordContext: CookRecordContext? = nil) async -> ConversionResult {
-        await gate.run("develop") {
-            await self.cookExclusively(.inMemory(raf, filename: filename), settings: settings,
-                                      progress: progress, fullResolution: fullResolution,
-                                      recordContext: recordContext)
-        } ?? Self.unstartedCook(filename: filename)
+        do throws(CameraBusy) {
+            return try await gate.run("develop") {
+                await self.cookExclusively(.inMemory(raf, filename: filename), settings: settings,
+                                          progress: progress, fullResolution: fullResolution,
+                                          recordContext: recordContext)
+            }
+        } catch {
+            return .refusedBecauseBusy(sourceFilename: filename)
+        }
     }
 
-    private static func unstartedCook(filename: String, interrupted: Bool = false) -> ConversionResult {
-        var result = ConversionResult(sourceFilename: filename, success: false,
-                                      clampedFields: [], errorMessage: interrupted
-            ? "This develop wasn't started because the previous conversion's outcome is uncertain. Reconnect the camera before trying again."
-            : "Another camera operation is still running. This develop wasn't started.")
-        result.evidence.failureReason = interrupted ? "previous_conversion_uncertain" : "camera_busy"
+    private static func unstartedCook(filename: String) -> ConversionResult {
+        var result = ConversionResult(sourceFilename: filename, success: false, clampedFields: [],
+            errorMessage: "This develop wasn't started because the previous conversion's outcome is uncertain. Reconnect the camera before trying again.")
+        result.evidence.failureReason = "previous_conversion_uncertain"
         return result
     }
 
@@ -194,9 +196,13 @@ final class RawConversionService {
     @discardableResult
     func cookBatch(_ items: [CookItem],
                    recordContext: CookRecordContext? = nil) async -> [ConversionResult] {
-        await gate.run("develop batch") {
-            await self.cookBatchExclusively(items, recordContext: recordContext)
-        } ?? items.map { Self.unstartedCook(filename: $0.raf.filename) }
+        do throws(CameraBusy) {
+            return try await gate.run("develop batch") {
+                await self.cookBatchExclusively(items, recordContext: recordContext)
+            }
+        } catch {
+            return items.map { .refusedBecauseBusy(sourceFilename: $0.raf.filename) }
+        }
     }
 
     private func cookBatchExclusively(_ items: [CookItem],
@@ -209,7 +215,7 @@ final class RawConversionService {
         for (i, item) in items.enumerated() {
             interrupted = interrupted || !session.operationIsCurrent(sessionEpoch)
             let prefix = total > 1 ? "(\(i + 1) of \(total)) " : ""
-            let result = interrupted ? Self.unstartedCook(filename: item.raf.filename, interrupted: true)
+            let result = interrupted ? Self.unstartedCook(filename: item.raf.filename)
                 : await cookExclusively(item.raf, settings: item.settings, progress: prefix,
                                       recordContext: recordContext)
             results.append(result)
@@ -234,13 +240,17 @@ final class RawConversionService {
     func cookMatrix(rafs: [RAFSource],
                     recipes: [(settings: RecipeSettings, displayName: String, filmSimulation: String?)],
                     recordContexts: [CookRecordContext] = []) async -> [TestKitchenComparison] {
-        await gate.run("develop comparison") {
-            await self.cookMatrixExclusively(rafs: rafs, recipes: recipes, recordContexts: recordContexts)
-        } ?? rafs.map { raf in
-            TestKitchenComparison(sourceFilename: raf.filename, versions: recipes.map {
-                TestKitchenVersion(recipeName: $0.displayName, filmSimulation: $0.filmSimulation,
-                                   result: Self.unstartedCook(filename: raf.filename))
-            })
+        do throws(CameraBusy) {
+            return try await gate.run("develop comparison") {
+                await self.cookMatrixExclusively(rafs: rafs, recipes: recipes, recordContexts: recordContexts)
+            }
+        } catch {
+            return rafs.map { raf in
+                TestKitchenComparison(sourceFilename: raf.filename, versions: recipes.map {
+                    TestKitchenVersion(recipeName: $0.displayName, filmSimulation: $0.filmSimulation,
+                                       result: .refusedBecauseBusy(sourceFilename: raf.filename))
+                })
+            }
         }
     }
 
@@ -285,7 +295,7 @@ final class RawConversionService {
             if interrupted {
                 comparisons.append(TestKitchenComparison(sourceFilename: raf.filename, versions: recipes.map {
                     TestKitchenVersion(recipeName: $0.displayName, filmSimulation: $0.filmSimulation,
-                                       result: Self.unstartedCook(filename: raf.filename, interrupted: true))
+                                       result: Self.unstartedCook(filename: raf.filename))
                 }))
                 completed += recipes.count
                 if session.operationIsCurrent(sessionEpoch) {
@@ -301,7 +311,7 @@ final class RawConversionService {
                     // Downscaled trigger: grid cells are comparison previews, and up to 9 full-res
                     // develops would be needlessly slow. Users re-cook the winner at full resolution.
                     let startedAt = CameraCompatibilityReport.timestamp()
-                    let result = interrupted ? Self.unstartedCook(filename: raf.filename, interrupted: true)
+                    let result = interrupted ? Self.unstartedCook(filename: raf.filename)
                         : await develop(loaded, settings: recipe.settings, model: model,
                                         using: conv, progress: prefix(), fullResolution: false)
                     interrupted = interrupted || result.requiresReconnect
@@ -821,11 +831,12 @@ final class RawConversionService {
     /// Each accepted candidate is developed at `0xD183 = 0`, the reduced size X RAW Studio uses for
     /// its previews, and the JPEG's MakerNote is read through `PhotoRecipeReader` to see what the
     /// camera rendered. The original profile is restored at the end, unless a command's outcome or the
-    /// session became uncertain; the report then says the restore wasn't attempted.
-    func probeConversionDynamicRange(raf: Data, filename: String) async -> ConversionProbeRun {
-        await gate.run("conversion dynamic range probe") {
+    /// session became uncertain; the report then says the restore wasn't attempted. Throws
+    /// `CameraBusy`, having sent nothing, when another operation holds the camera.
+    func probeConversionDynamicRange(raf: Data, filename: String) async throws(CameraBusy) -> ConversionProbeRun {
+        try await gate.run("conversion dynamic range probe") {
             await self.probeConversionDynamicRangeExclusively(raf: raf, filename: filename)
-        } ?? ConversionProbeRun(report: "D185 DR probe wasn't started: another camera operation is running.")
+        }
     }
 
     private func probeConversionDynamicRangeExclusively(raf: Data, filename: String) async -> ConversionProbeRun {
@@ -997,10 +1008,10 @@ final class RawConversionService {
     /// conversion buffer's `FUP_FILE.dat`, the harvest deletes it and reads `0xD185` once more to see
     /// whether the buffer went with it.
     ///
-    /// Nil when it could not run: `canHarvestProfile` is false, or another operation holds the
-    /// camera.
-    func harvestConversionProfile(raf: Data) async -> ProfileHarvestOutcome? {
-        await gate.run("profile harvest") { await self.harvestConversionProfileExclusively(raf: raf) } ?? nil
+    /// Nil when `canHarvestProfile` is false, so nothing was sent. Throws `CameraBusy`, also having
+    /// sent nothing, when another operation holds the camera.
+    func harvestConversionProfile(raf: Data) async throws(CameraBusy) -> ProfileHarvestOutcome? {
+        try await gate.run("profile harvest") { await self.harvestConversionProfileExclusively(raf: raf) }
     }
 
     private func harvestConversionProfileExclusively(raf: Data) async -> ProfileHarvestOutcome? {

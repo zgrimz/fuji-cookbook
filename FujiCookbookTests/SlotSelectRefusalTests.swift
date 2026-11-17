@@ -55,7 +55,7 @@ final class SlotSelectRefusalTests: XCTestCase {
     func testThePropertyReportNamesTheAnswerThatRefusedItsSelect() async throws {
         let (m, _) = await connect(.busyXM5)
 
-        _ = await m.diagnostics.probeProperties(slot: 2)
+        _ = try await m.diagnostics.probeProperties(slot: 2)
 
         let message = try XCTUnwrap(failureMessage(m.session.status), "got \(m.session.status)")
         XCTAssertTrue(message.contains("C2"), message)

@@ -226,7 +226,7 @@ final class RAFHeaderTests: XCTestCase {
         faults.rejectsUpload = 0x2002
         let m = await connected(faults)
         XCTAssertEqual(m.session.connected?.model?.id, "GFX100")
-        let harvested = await m.conversion.harvestConversionProfile(raf: raf(model: "X-T5"))
+        let harvested = try await m.conversion.harvestConversionProfile(raf: raf(model: "X-T5"))
         let outcome = try XCTUnwrap(harvested)
         XCTAssertEqual(uploads(m), 1, "sent, unlike a develop")
         XCTAssertEqual(outcome.record.failureReason, "upload_general_error")
@@ -237,7 +237,7 @@ final class RAFHeaderTests: XCTestCase {
         var own = MockCameraFaults(productName: "FUJIFILM GFX 100", firmwareVersion: nil, profileNeedsUpload: true)
         own.rejectsUpload = 0x2002
         let m2 = await connected(own)
-        let harvested2 = await m2.conversion.harvestConversionProfile(raf: raf(model: "GFX 100"))
+        let harvested2 = try await m2.conversion.harvestConversionProfile(raf: raf(model: "GFX 100"))
         let outcome2 = try XCTUnwrap(harvested2)
         XCTAssertEqual(outcome2.record.failureReason, "upload_general_error")
         XCTAssertEqual(outcome2.record.rafHeader, "names this body")
@@ -245,13 +245,13 @@ final class RAFHeaderTests: XCTestCase {
         var accepts = MockCameraFaults(productName: "FUJIFILM GFX 100", firmwareVersion: nil)
         accepts.readResponseCodes = [FujiPTP.Prop.rawConvProfile: 0x2002]
         let m3 = await connected(accepts)
-        let harvested3 = await m3.conversion.harvestConversionProfile(raf: raf(model: "X-T5"))
+        let harvested3 = try await m3.conversion.harvestConversionProfile(raf: raf(model: "X-T5"))
         let outcome3 = try XCTUnwrap(harvested3)
         XCTAssertEqual(outcome3.record.uploadOutcome, "accepted")
         XCTAssertEqual(outcome3.record.failureReason, "raf_from_different_body")
 
         let m4 = await connected(accepts)
-        let harvested4 = await m4.conversion.harvestConversionProfile(raf: raf(model: "GFX 100"))
+        let harvested4 = try await m4.conversion.harvestConversionProfile(raf: raf(model: "GFX 100"))
         let outcome4 = try XCTUnwrap(harvested4)
         XCTAssertEqual(outcome4.record.failureReason, "ptp_0x2002", "the body's own file is not blamed")
     }
@@ -262,7 +262,7 @@ final class RAFHeaderTests: XCTestCase {
     func testTheHarvestOfTheBodysOwnFileIsAcceptedNotRefused() async throws {
         let own = MockCameraFaults(productName: "FUJIFILM GFX 100", firmwareVersion: nil, profileNeedsUpload: true)
         let m = await connected(own)
-        let harvested = await m.conversion.harvestConversionProfile(raf: raf(model: "GFX 100"))
+        let harvested = try await m.conversion.harvestConversionProfile(raf: raf(model: "GFX 100"))
         let outcome = try XCTUnwrap(harvested)
         XCTAssertEqual(outcome.record.uploadOutcome, "accepted")
         XCTAssertEqual(outcome.record.rafHeader, "names this body")
