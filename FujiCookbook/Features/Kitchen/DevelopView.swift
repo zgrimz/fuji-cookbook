@@ -154,7 +154,7 @@ struct DevelopView: View {
                          maxFiles: guided?.maxFiles,
                          header: pickedRAFs.count > 1 ? "RAW Files (\(pickedRAFs.count))" : "RAW Files",
                          footer: guided == nil
-                             ? "Pick one or more .RAF files. Each will be developed with the recipe below."
+                             ? "Each file is developed with the recipe below."
                              : "Choose one RAW file (.RAF) from Photos or Files, taken with this same camera.",
                          step: 1)
     }
@@ -198,6 +198,10 @@ struct DevelopView: View {
             CookButton(title: isCooking ? "Developing…" : "Develop \(pickedRAFs.count > 1 ? "\(pickedRAFs.count) Files" : "File")",
                        systemImage: "wand.and.stars",
                        enabled: canCook,
+                       blockedReason: CookPrerequisite.missing(hasFiles: !pickedRAFs.isEmpty,
+                                                               hasRecipe: resolvedRecipe != nil,
+                                                               cameraCanConvert: camera.session.canConvert)?
+                           .message(for: .develop),
                        action: cook)
             if diagnosticMode { probeRow }
         } header: {
@@ -205,7 +209,7 @@ struct DevelopView: View {
                 .textCase(nil)
         } footer: {
             Text(guided == nil
-                 ? "Developed at full resolution and saved to Recent Results in the Kitchen.\n\nKeep Fuji Cookbook in the foreground and the camera awake while developing — backgrounding the app can drop the USB connection and interrupt the transfer.\n\nThe recipe's white balance is applied to the develop, including a color temperature in Kelvin. A recipe with no white balance set keeps the one the photo was shot at.\n\nA recipe's Dynamic Range is capped to what the RAW was shot at — a higher DR (e.g. DR400 on a DR200 file) has no exposure headroom to develop and is reduced automatically (shown in the result)."
+                 ? "Developed at full resolution and saved to Recent Results. Keep the app open and the camera awake until it finishes: leaving the app can drop the USB connection."
                  : "Keep the app open and the USB cable connected until the photo appears. The full-resolution JPEG is saved in Kitchen → Recent Results. Any Dynamic Range adjustment is shown with the photo.")
         }
     }
@@ -289,6 +293,7 @@ struct DevelopView: View {
             Button { showGuide = true } label: {
                 Label("Connection Help & Requirements", systemImage: "questionmark.circle")
             }
+            if guided == nil { recipeApplicationNote }
             // An action, not a push: this stack declares `.navigationDestination(item:)` above, and a
             // destination-form `NavigationLink` shares its presentation slot and pushes the wrong
             // screen.
@@ -303,6 +308,23 @@ struct DevelopView: View {
             if pendingCompletion != nil, !completionSaved, guided != nil {
                 Button("Retry saving test result", action: saveCompletion)
             }
+        }
+    }
+
+    /// How the camera follows a recipe where the RAW limits it. Behind a disclosure: it answers a
+    /// question asked after a develop looks different from the recipe, not before every develop,
+    /// and the result names any Dynamic Range it reduced.
+    private var recipeApplicationNote: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("The recipe's white balance is applied, including a color temperature in Kelvin. A recipe with no white balance set keeps the one the photo was shot at.")
+                Text("Dynamic Range is capped to what the RAW was shot at. A higher setting, like DR400 on a DR200 file, has no exposure headroom to develop, so it is reduced, and the result says so.")
+            }
+            .font(.footnote)
+            .foregroundStyle(Theme.ink2)
+            .padding(.vertical, 4)
+        } label: {
+            Label("How a Recipe Is Applied", systemImage: "info.circle")
         }
     }
 

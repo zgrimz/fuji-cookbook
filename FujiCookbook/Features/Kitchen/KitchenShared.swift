@@ -280,15 +280,63 @@ struct CookStatusSection: View {
     }
 }
 
-/// The Kitchen's "cook" action: full-width, amber, dimmed when it can't run. Both cook screens use
-/// it so developing looks like the same act whichever pathway you came through.
+/// What a cook form still needs before it can develop, the first missing thing first.
+enum CookPrerequisite: Equatable {
+    case filesAndRecipe, files, recipe, camera
+
+    enum Screen { case develop, testKitchen }
+
+    /// Nil when files, a recipe and a camera that converts are all in place: whatever else holds
+    /// the button (a run already going) is shown by the button itself.
+    static func missing(hasFiles: Bool, hasRecipe: Bool, cameraCanConvert: Bool) -> CookPrerequisite? {
+        switch (hasFiles, hasRecipe) {
+        case (false, false): .filesAndRecipe
+        case (false, true): .files
+        case (true, false): .recipe
+        case (true, true): cameraCanConvert ? nil : .camera
+        }
+    }
+
+    func message(for screen: Screen) -> String {
+        switch (self, screen) {
+        case (.filesAndRecipe, .develop): "Choose a RAW file and a recipe to develop."
+        case (.filesAndRecipe, .testKitchen): "Choose RAW files and recipes to compare."
+        case (.files, .develop): "Choose a RAW file to develop."
+        case (.files, .testKitchen): "Choose RAW files to compare."
+        case (.recipe, .develop): "Choose a recipe to develop with."
+        case (.recipe, .testKitchen): "Choose the recipes to compare."
+        case (.camera, _): "Connect a camera to develop."
+        }
+    }
+}
+
+/// The Kitchen's "cook" action: full-width, amber, dimmed when it can't run, with the reason
+/// beneath it. Both cook screens use it so developing looks like the same act whichever pathway
+/// you came through.
 struct CookButton: View {
     let title: String
     let systemImage: String
     let enabled: Bool
+    /// What the form still needs, shown while the button is disabled.
+    var blockedReason: String?
     let action: () -> Void
 
     var body: some View {
+        VStack(spacing: 8) {
+            button
+            if !enabled, let blockedReason {
+                Text(blockedReason)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.ink2)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets())
+    }
+
+    private var button: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(.headline)
@@ -300,8 +348,6 @@ struct CookButton: View {
         .buttonStyle(.plain)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.45)
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets())
     }
 }
 
@@ -357,18 +403,16 @@ struct RAFPickerSection: View {
         Section {
             if let photoImport {
                 importRow(photoImport)
-            } else if pickedRAFs.isEmpty {
-                photosButton(title: "Choose from Photos…")
-                pairsButton(title: "Choose RAW+JPEG Photos…")
-                filesButton
             } else {
-                // One row once files are listed, as Read Recipe's Read Another does.
+                // One row with the three sources behind it, each saying which photos it is for:
+                // three equal rows read as three ways to do the same thing.
                 Menu {
-                    photosButton(title: "Choose from Photos")
-                    pairsButton(title: "Choose RAW+JPEG Photos")
+                    photosButton
+                    pairsButton
                     filesButton
                 } label: {
-                    Label("Change Selection…", systemImage: "photo.stack")
+                    Label(pickedRAFs.isEmpty ? "Add RAW Files…" : "Change Selection…",
+                          systemImage: pickedRAFs.isEmpty ? "plus.circle" : "photo.stack")
                 }
             }
             ForEach(pickedRAFs, id: \.self) { url in
@@ -433,18 +477,28 @@ struct RAFPickerSection: View {
             } message: { Text(photoProblem?.message ?? "") }
     }
 
-    private func photosButton(title: String) -> some View {
-        Button { showPhotoPicker = true } label: { Label(title, systemImage: "photo") }
+    // The menu items keep the names the photo-import messages send people to
+    // (`PhotoLibraryRAW.Import.Problem`); the second line says which photos each is for.
+
+    private var photosButton: some View {
+        Button { showPhotoPicker = true } label: {
+            Label("Choose from Photos…", systemImage: "photo")
+            Text("Photos shot in RAW only")
+        }
     }
 
-    private func pairsButton(title: String) -> some View {
+    private var pairsButton: some View {
         Button { showPairPicker = true } label: {
-            Label(title, systemImage: "photo.on.rectangle.angled")
+            Label("Choose RAW+JPEG Photos…", systemImage: "photo.on.rectangle.angled")
+            Text("Photos shot as RAW+JPEG")
         }
     }
 
     private var filesButton: some View {
-        Button { showFilePicker = true } label: { Label("Browse Files…", systemImage: "folder") }
+        Button { showFilePicker = true } label: {
+            Label("Browse Files…", systemImage: "folder")
+            Text(".RAF files in Files")
+        }
     }
 
     /// The pick replaces the selection now, not when the copy lands, so nothing can be developed

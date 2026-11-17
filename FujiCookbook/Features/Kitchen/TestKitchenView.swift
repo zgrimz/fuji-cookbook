@@ -143,8 +143,9 @@ struct TestKitchenView: View {
                          maxFiles: guided?.maxFiles ?? Self.maxFiles,
                          header: pickedRAFs.isEmpty ? "RAW Files" : "RAW Files (\(pickedRAFs.count) of \(guided?.maxFiles ?? Self.maxFiles))",
                          footer: guided == nil
-                             ? "Pick up to \(Self.maxFiles) .RAF files. Each is developed with every recipe you choose below."
-                             : "Choose RAW files (.RAF) taken with this same camera. Each recipe creates a separate preview of each file.")
+                             ? "Up to \(Self.maxFiles) files. Each is developed with every recipe below."
+                             : "Choose RAW files (.RAF) taken with this same camera. Each recipe creates a separate preview of each file.",
+                         step: 1)
     }
 
     /// Only the chosen recipes appear here. Printing the entire Library plus every camera slot
@@ -179,10 +180,14 @@ struct TestKitchenView: View {
                 }
             }
         } header: {
-            Text(guided == nil ? (selectedRefs.isEmpty ? "Recipes" : "Recipes (\(selectedRefs.count) of \(Self.maxRecipes))") : "Supplied test recipes")
+            Theme.StepHeader(number: 2,
+                             title: guided == nil
+                                 ? (selectedRefs.isEmpty ? "Recipes" : "Recipes (\(selectedRefs.count) of \(Self.maxRecipes))")
+                                 : "Supplied test recipes")
+                .textCase(nil)
         } footer: {
             Text(guided == nil
-                 ? "Choose up to \(Self.maxRecipes) recipes to compare. Library recipes and programmed camera slots can be mixed."
+                 ? "Up to \(Self.maxRecipes). Library recipes and camera slots can be mixed."
                  : "The test recipes are ready. Compare their colour and monochrome previews of the same scene.")
         }
     }
@@ -190,10 +195,18 @@ struct TestKitchenView: View {
     private var cookSection: some View {
         Section {
             CookButton(title: cookButtonTitle, systemImage: "square.grid.2x2",
-                       enabled: canCook, action: cook)
+                       enabled: canCook,
+                       blockedReason: CookPrerequisite.missing(hasFiles: !pickedRAFs.isEmpty,
+                                                               hasRecipe: !resolvedRecipes.isEmpty,
+                                                               cameraCanConvert: camera.session.canConvert)?
+                           .message(for: .testKitchen),
+                       action: cook)
+        } header: {
+            Theme.StepHeader(number: 3, title: "Compare")
+                .textCase(nil)
         } footer: {
             Text(guided == nil
-                 ? "Develops a grid of \(pickedRAFs.count) file\(pickedRAFs.count == 1 ? "" : "s") × \(resolvedRecipes.count) recipe\(resolvedRecipes.count == 1 ? "" : "s"), saved to Recent Results in the Kitchen.\n\nVersions are developed at reduced resolution — they're for judging a recipe, not for keeping. Develop the winner on its own for the full-resolution file.\n\nKeep the app in the foreground and the camera awake — each version is a separate on-camera conversion."
+                 ? "Each version is a smaller preview for judging a recipe, saved to Recent Results. Develop at Full Resolution there makes the full-size file of the one you pick. Keep the app open and the camera awake until it finishes."
                  : "Keep the app open and the USB cable connected until all previews appear. These smaller JPEGs are saved in Kitchen → Recent Results. View each recipe's version, then tap Continue Camera Test to record your observation.")
         }
     }
