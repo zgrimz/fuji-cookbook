@@ -842,16 +842,26 @@ struct GuidedDevelopStep: View {
     @Binding var session: GuidedTestSession
     let onAdvance: () -> Void
 
-    private enum RAWSource { case photos, files }
+    private enum RAWSource { case photos, rawPairs, files }
 
     @Environment(CameraServices.self) private var camera
+    @Environment(\.photoLibrary) private var library
     @State private var showingFilePicker = false
     @State private var showingPhotoPicker = false
+    @State private var showingPairPicker = false
     @State private var photoSelection: [PhotosPickerItem] = []
     /// So "Choose another RAW file" reopens wherever the last one came from.
     @State private var lastSource = RAWSource.photos
     @State private var photoProblem: PhotoLibraryRAW.Import.Problem?
     @State private var isHarvesting = false
+    /// The photo chosen with Choose RAW+JPEG Photos while its RAF downloads; the download runs in
+    /// a task the step owns, so leaving the step cancels it and removes what it copied.
+    @State private var pairDownload: PairDownload?
+
+    private struct PairDownload: Equatable {
+        let id = UUID()
+        let ids: [String]
+    }
 
     /// A body the app doesn't develop on, but can send a RAF to. The harvest is the only way to
     /// find out whether it should — see `RawConversionService.harvestConversionProfile`.
@@ -893,6 +903,7 @@ struct GuidedDevelopStep: View {
             if offersHarvest, harvestCanRun {
                 GuidedPrimaryButton(title: "Choose from Photos", systemImage: "photo",
                                     busy: isHarvesting) { choose(.photos) }
+                GuidedSecondaryButton(title: "Choose RAW+JPEG Photos…", enabled: !isHarvesting) { choose(.rawPairs) }
                 GuidedSecondaryButton(title: "Browse Files…", enabled: !isHarvesting) { choose(.files) }
                 GuidedSecondaryButton(title: "I don't have a RAW file") {
                     session.profileHarvest = .init(state: .skipped,
@@ -923,9 +934,17 @@ struct GuidedDevelopStep: View {
             photoSelection = []   // clear immediately so the picker dismisses cleanly, per FrameAndFitView
             runHarvest(items)
         }
+        .rawPairPicker(isPresented: $showingPairPicker, limit: 1,
+                       onPick: { pairDownload = PairDownload(ids: $0) },
+                       onFullAccess: { showingPhotoPicker = true },
+                       onBrowseFiles: { choose(.files) })
         .alert(photoProblem?.title ?? "", isPresented: Binding(isPresent: $photoProblem)) {
+            if photoProblem?.offersRAWPairs == true {
+                Button("Choose RAW+JPEG Photos…") { choose(.rawPairs) }
+            }
             Button("OK", role: .cancel) {}
         } message: { Text(photoProblem?.message ?? "") }
+        .task(id: pairDownload?.id) { await downloadPair() }
         .onAppear {
             if session.develop == nil, let notApplicable = GuidedTestFlow.developState(facts: GuidedTestRunner.facts(camera)) {
                 session.develop = notApplicable
@@ -937,6 +956,7 @@ struct GuidedDevelopStep: View {
         lastSource = source
         switch source {
         case .photos: showingPhotoPicker = true
+        case .rawPairs: showingPairPicker = true
         case .files: showingFilePicker = true
         }
     }
@@ -959,13 +979,29 @@ struct GuidedDevelopStep: View {
         Task {
             isHarvesting = true
             defer { isHarvesting = false }
-            let copied = await PhotoLibraryRAW.copy(items)
+            let copied = await PhotoLibraryRAW.copy(items, library: library)
             guard let picked = copied.urls.first else {
                 photoProblem = copied.problem
                 return
             }
             await harvest(PickedRAFStore.stage([picked]))
         }
+    }
+
+    /// A photo chosen with Choose RAW+JPEG Photos: its RAF is copied out of the library first, then
+    /// sent as a Files pick is. A copy that fails is reported on screen and records nothing.
+    private func downloadPair() async {
+        guard let pending = pairDownload else { return }
+        isHarvesting = true
+        let copied = await RAWPhotoCopy().copy(pending.ids, from: library)
+        isHarvesting = false
+        guard !Task.isCancelled else { return }
+        pairDownload = nil
+        guard let picked = copied.urls.first else {
+            photoProblem = copied.problem
+            return
+        }
+        runHarvest([picked])
     }
 
     /// Read the staged file off the main actor, let the copy go, and send the bytes.

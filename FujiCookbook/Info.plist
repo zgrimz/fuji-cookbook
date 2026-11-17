@@ -81,6 +81,16 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Fuji Cookbook saves the JPEGs it develops from your RAW files, and the photos you frame with Frame &amp; Fit, into your photo library when you choose to save them.</string>
 
+	<!-- Asked for only from Choose RAW+JPEG Photos in the Kitchen and the Camera Test: the photo
+	     picker shares only the JPEG of a RAW+JPEG photo, and its RAF is a resource Photos keeps
+	     behind it. -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Fuji Cookbook reads the RAW file stored with the RAW+JPEG photos you choose, so your camera can develop it. Choose Limit Access to share only those photos.</string>
+	<!-- The RAW+JPEG sheet offers Select More Photos itself; the system's periodic "keep or select
+	     more" alert would repeat it. -->
+	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
+	<true/>
+
 	<!-- Open the user's original file rather than a copy. Without this key iOS copies every opened
 	     recipe into Documents/Inbox and expects the app to delete it afterwards; we never do, so the
 	     copies would pile up invisibly. Importing only reads the file (the recipes are copied into

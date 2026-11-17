@@ -321,12 +321,37 @@ struct RAFPickerSection: View {
     let footer: String
     var step: Int?
 
+    @Environment(\.photoLibrary) private var library
     @State private var showFilePicker = false
     @State private var showPhotoPicker = false
+    @State private var showPairPicker = false
     @State private var photoSelection: [PhotosPickerItem] = []
     /// The photos being copied out of the library; set only while that copy runs.
-    @State private var photoImport: [PhotosPickerItem]?
+    @State private var photoImport: PhotoImport?
     @State private var photoProblem: PhotoLibraryRAW.Import.Problem?
+
+    /// Where the photos being copied were picked.
+    private enum PhotoImport {
+        /// The photo picker: each photo's RAW if the picker offers one, else its RAF through photo
+        /// library access when the app already has it.
+        case picked([PhotosPickerItem])
+        /// Choose RAW+JPEG Photos, by identifier, with a copy of its own so a cancelled import's
+        /// progress can't reach the next one.
+        case shared([String], RAWPhotoCopy)
+
+        var isEmpty: Bool {
+            switch self {
+            case .picked(let items): items.isEmpty
+            case .shared(let ids, _): ids.isEmpty
+            }
+        }
+
+        /// The shared copy's progress; nil for a picker import, which reports none.
+        @MainActor var progress: RAWPhotoCopy.Progress? {
+            guard case .shared(_, let copy) = self else { return nil }
+            return copy.progress
+        }
+    }
 
     var body: some View {
         Section {
@@ -334,11 +359,13 @@ struct RAFPickerSection: View {
                 importRow(photoImport)
             } else if pickedRAFs.isEmpty {
                 photosButton(title: "Choose from Photos…")
+                pairsButton(title: "Choose RAW+JPEG Photos…")
                 filesButton
             } else {
                 // One row once files are listed, as Read Recipe's Read Another does.
                 Menu {
                     photosButton(title: "Choose from Photos")
+                    pairsButton(title: "Choose RAW+JPEG Photos")
                     filesButton
                 } label: {
                     Label("Change Selection…", systemImage: "photo.stack")
@@ -392,12 +419,16 @@ struct RAFPickerSection: View {
                 // Cleared at once, so the picker opens empty next time and the same photo picked
                 // again still changes the selection.
                 photoSelection = []
-                // The pick replaces the selection now, not when the copy lands, so nothing can be
-                // developed from files that are about to be discarded.
-                replaceSelection(with: [])
-                photoImport = items
+                startImport(.picked(items))
             }
+            .rawPairPicker(isPresented: $showPairPicker, limit: maxFiles,
+                           onPick: { startImport(.shared($0, RAWPhotoCopy())) },
+                           onFullAccess: { showPhotoPicker = true },
+                           onBrowseFiles: { showFilePicker = true })
             .alert(photoProblem?.title ?? "", isPresented: Binding(isPresent: $photoProblem)) {
+                if photoProblem?.offersRAWPairs == true {
+                    Button("Choose RAW+JPEG Photos…") { showPairPicker = true }
+                }
                 Button("OK", role: .cancel) {}
             } message: { Text(photoProblem?.message ?? "") }
     }
@@ -406,26 +437,63 @@ struct RAFPickerSection: View {
         Button { showPhotoPicker = true } label: { Label(title, systemImage: "photo") }
     }
 
+    private func pairsButton(title: String) -> some View {
+        Button { showPairPicker = true } label: {
+            Label(title, systemImage: "photo.on.rectangle.angled")
+        }
+    }
+
     private var filesButton: some View {
         Button { showFilePicker = true } label: { Label("Browse Files…", systemImage: "folder") }
     }
 
-    /// Stands in for the source buttons while the copy runs, and owns it: leaving the screen
-    /// cancels the copy, a cancelled copy selects nothing, and coming back starts it over.
-    private func importRow(_ items: [PhotosPickerItem]) -> some View {
-        HStack(spacing: 10) {
-            ProgressView()
-            Text("Copying from Photos…")
-                .font(.subheadline)
-                .foregroundStyle(Theme.ink2)
+    /// The pick replaces the selection now, not when the copy lands, so nothing can be developed
+    /// from files that are about to be discarded.
+    private func startImport(_ pending: PhotoImport) {
+        guard !pending.isEmpty else { return }
+        replaceSelection(with: [])
+        photoImport = pending
+    }
+
+    /// Stands in for the source buttons while the copy runs, and owns it: leaving the screen or
+    /// tapping Cancel cancels the copy, a cancelled copy selects nothing, and coming back starts it
+    /// over.
+    private func importRow(_ pending: PhotoImport) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                if pending.progress?.download == nil { ProgressView() }
+                Text(importStatus(pending.progress))
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.ink2)
+                Spacer()
+                Button("Cancel") { photoImport = nil }
+                    .font(.subheadline)
+                    .buttonStyle(.borderless)
+            }
+            if let download = pending.progress?.download {
+                ProgressView(value: download)
+                    .tint(Theme.accent)
+                    .accessibilityLabel("Downloading from iCloud")
+            }
         }
         .task {
-            let copied = await PhotoLibraryRAW.copy(items)
+            let copied = switch pending {
+            case .picked(let items): await PhotoLibraryRAW.copy(items, library: library)
+            case .shared(let ids, let copy): await copy.copy(ids, from: library)
+            }
             guard !Task.isCancelled else { return }
             replaceSelection(with: copied.urls)
             photoProblem = copied.problem
             photoImport = nil
         }
+    }
+
+    /// "Copying from Photos…", with which file when there are several, and that it's coming from
+    /// iCloud while Photos reports a download.
+    private func importStatus(_ progress: RAWPhotoCopy.Progress?) -> String {
+        guard let progress else { return "Copying from Photos…" }
+        let source = progress.download == nil ? "Copying from Photos" : "Downloading from iCloud"
+        return progress.count > 1 ? "\(source)… \(progress.file) of \(progress.count)" : "\(source)…"
     }
 
     /// Stage the picked files in `PickedRAFStore`, then discard the staged files they replace.

@@ -17,6 +17,7 @@ struct FujiCookbookApp: App {
     @State private var importCoordinator = ImportCoordinator()
     @State private var aiSettings = AISettings()
     @State private var ownedCameras = OwnedCameras()
+    private let photoLibrary = PhotoKitLibrary()
 
     /// Light, Dark or System, from Settings ▸ Display — applied to every window below.
     @AppStorage(AppearancePreference.key, store: SharedDefaults.suite)
@@ -88,6 +89,7 @@ struct FujiCookbookApp: App {
                 .environment(importCoordinator)
                 .environment(aiSettings)
                 .environment(ownedCameras)
+                .environment(\.photoLibrary, photoLibrary)
                 .environment(\.cloudStoreState, cloudStoreState)
                 // Open .fujirecipe / .json files from Files, Mail, Messages, the share sheet.
                 .onOpenURL { url in

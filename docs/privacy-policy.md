@@ -39,7 +39,7 @@ Like other iOS apps, the app's local data can be included in device and iCloud b
 ## **4\. Permissions the app asks for**
 
 * **Camera.** iOS uses its Camera permission for external cameras connected over USB. The app asks for it so it can communicate with your Fujifilm camera. It does not use your device's built-in camera or microphone.  
-* **Photos.** The app asks only for permission to add photos to your photo library: the developed and edited photos you choose to save. It does not ask to read your library. When you pick a photo, the iOS picker gives the app only the photos you select.
+* **Photos.** The app asks for permission to add photos to your photo library: the developed and edited photos you choose to save. When you pick a photo, the iOS picker gives the app only the photos you select. The picker shares only the JPEG of a photo you shot as RAW+JPEG, so if you choose to develop the RAW of such a photo, the app asks for access to your photos. You can give it access to only the photos you select (Limited Access) or to all of them (Full Access). It uses the photos you share, such as their thumbnails and dates, to show them for choosing, and reads the RAW file only of those you choose to develop, which it sends only to your camera (Section 5). You can change this permission at any time in Settings.
 
 The app requests no other permissions. It does not use location, contacts, or Bluetooth. When iCloud sync is turned on, background activity is limited to receiving silent CloudKit notifications to fetch library updates from your iCloud account.
 

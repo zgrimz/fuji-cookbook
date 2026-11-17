@@ -29,32 +29,35 @@ final class PhotoLibraryRAWTests: XCTestCase {
         XCTAssertNil(PhotoLibraryRAW.Import().problem, "cancelling the picker picks nothing and says nothing")
     }
 
-    /// The fact first, then where the .RAF comes from, then the pair case — hedged, and last. A
-    /// tester who picked a plain JPEG read the old wording as Photos hiding a RAW from the app.
-    func testOnePhotoWithoutARAWSaysSoAndPointsAtTheRAF() throws {
+    /// The fact first, then the pair route — conditional, since a plain JPEG has no RAW to reach —
+    /// then the plain .RAF. A tester who picked a plain JPEG read an older wording as Photos hiding
+    /// a RAW from the app.
+    func testOnePhotoWithoutARAWSaysSoAndOffersThePairRoute() throws {
         let problem = try XCTUnwrap(PhotoLibraryRAW.Import(withoutRAW: 1).problem)
         XCTAssertEqual(problem.title, "Couldn't Use That Photo")
-        XCTAssertEqual(problem.message, "That photo has no RAW file attached. Pick the .RAF itself — from Photos if the Fujifilm app downloaded it to your phone, or with Browse Files. A photo Photos holds as a RAW+JPEG pair may offer only its JPEG; bring its .RAF in on its own.")
+        XCTAssertTrue(problem.offersRAWPairs)
+        XCTAssertEqual(problem.message, "That photo came without a RAW file. If you shot RAW+JPEG, use Choose RAW+JPEG Photos: Photos keeps the RAW behind the JPEG, where the photo picker can't reach it. Otherwise, pick the .RAF itself, from Photos or with Browse Files.")
     }
 
     func testEveryPhotoWithoutARAWSaysNone() throws {
         let problem = try XCTUnwrap(PhotoLibraryRAW.Import(withoutRAW: 3).problem)
         XCTAssertEqual(problem.title, "Couldn't Use Those Photos")
-        XCTAssertEqual(problem.message, "None of those photos has a RAW file attached. Pick the .RAF itself — from Photos if the Fujifilm app downloaded it to your phone, or with Browse Files. A photo Photos holds as a RAW+JPEG pair may offer only its JPEG; bring its .RAF in on its own.")
+        XCTAssertEqual(problem.message, "None of those photos came with a RAW file. If you shot RAW+JPEG, use Choose RAW+JPEG Photos: Photos keeps the RAW behind the JPEG, where the photo picker can't reach it. Otherwise, pick the .RAF itself, from Photos or with Browse Files.")
     }
 
     func testSomePhotosWithoutARAWAreCountedAgainstThePick() throws {
         let one = try XCTUnwrap(PhotoLibraryRAW.Import(urls: [raf, raf], withoutRAW: 1).problem)
         XCTAssertEqual(one.title, "Some Photos Weren't Added")
-        XCTAssertEqual(one.message, "1 of the 3 photos has no RAW file attached. Pick the .RAF itself — from Photos if the Fujifilm app downloaded it to your phone, or with Browse Files. A photo Photos holds as a RAW+JPEG pair may offer only its JPEG; bring its .RAF in on its own.")
+        XCTAssertEqual(one.message, "1 of the 3 photos came without a RAW file. If you shot RAW+JPEG, use Choose RAW+JPEG Photos: Photos keeps the RAW behind the JPEG, where the photo picker can't reach it. Otherwise, pick the .RAF itself, from Photos or with Browse Files.")
 
         let two = try XCTUnwrap(PhotoLibraryRAW.Import(urls: [raf], withoutRAW: 2).problem)
-        XCTAssertEqual(two.message, "2 of the 3 photos have no RAW file attached. Pick the .RAF itself — from Photos if the Fujifilm app downloaded it to your phone, or with Browse Files. A photo Photos holds as a RAW+JPEG pair may offer only its JPEG; bring its .RAF in on its own.")
+        XCTAssertEqual(two.message, "2 of the 3 photos came without a RAW file. If you shot RAW+JPEG, use Choose RAW+JPEG Photos: Photos keeps the RAW behind the JPEG, where the photo picker can't reach it. Otherwise, pick the .RAF itself, from Photos or with Browse Files.")
     }
 
     func testAFailedCopyAsksToTryAgain() throws {
         let single = try XCTUnwrap(PhotoLibraryRAW.Import(failed: 1).problem)
         XCTAssertEqual(single.title, "Couldn't Use That Photo")
+        XCTAssertFalse(single.offersRAWPairs, "a copy that failed has a RAW; the pair route wouldn't help")
         XCTAssertEqual(single.message, "Couldn't copy that photo from your library. Try again.")
 
         let all = try XCTUnwrap(PhotoLibraryRAW.Import(failed: 2).problem)
@@ -65,9 +68,35 @@ final class PhotoLibraryRAWTests: XCTestCase {
         XCTAssertEqual(some.message, "1 of the 2 photos couldn't be copied from your library. Try picking it again.")
     }
 
+    /// A photo the library looked inside and found no RAW in isn't offered Choose RAW+JPEG Photos,
+    /// which would find nothing either: under full access it reopens the same picker.
+    func testAPhotoConfirmedToHaveNoRAWIsNotOfferedThePairRoute() throws {
+        let problem = try XCTUnwrap(PhotoLibraryRAW.Import(checkedWithoutRAW: 1).problem)
+        XCTAssertFalse(problem.offersRAWPairs)
+        XCTAssertEqual(problem.message, "That photo came without a RAW file. Pick the .RAF itself, from Photos or with Browse Files.")
+    }
+
+    /// One unchecked photo among checked ones is enough to offer the route.
+    func testAnUncheckedPhotoAmongCheckedOnesStillOffersThePairRoute() throws {
+        let problem = try XCTUnwrap(PhotoLibraryRAW.Import(withoutRAW: 1, checkedWithoutRAW: 1).problem)
+        XCTAssertTrue(problem.offersRAWPairs)
+        XCTAssertTrue(problem.message.hasPrefix("None of those photos came with a RAW file. If you shot RAW+JPEG"))
+    }
+
+    /// A photo holding two RAWs or two JPEGs is an error the user can act on, not a failed copy.
+    func testAPhotoWithTwoRAWsOrTwoJPEGsSaysWhy() throws {
+        let one = try XCTUnwrap(PhotoLibraryRAW.Import(unusable: 1).problem)
+        XCTAssertEqual(one.title, "Couldn't Use That Photo")
+        XCTAssertEqual(one.message, "That photo holds two RAW files or two JPEG files, so the app can't tell which one to develop.")
+        XCTAssertFalse(one.offersRAWPairs)
+
+        let some = try XCTUnwrap(PhotoLibraryRAW.Import(urls: [raf], unusable: 1).problem)
+        XCTAssertEqual(some.message, "1 of the 2 photos holds two RAW files or two JPEG files, so the app can't tell which one to develop.")
+    }
+
     func testAMixedPickNamesBothProblems() throws {
         let problem = try XCTUnwrap(PhotoLibraryRAW.Import(urls: [raf], withoutRAW: 1, failed: 2).problem)
         XCTAssertEqual(problem.title, "Some Photos Weren't Added")
-        XCTAssertEqual(problem.message, "1 of the 4 photos has no RAW file attached. Pick the .RAF itself — from Photos if the Fujifilm app downloaded it to your phone, or with Browse Files. A photo Photos holds as a RAW+JPEG pair may offer only its JPEG; bring its .RAF in on its own. 2 of the 4 photos couldn't be copied from your library. Try picking them again.")
+        XCTAssertEqual(problem.message, "1 of the 4 photos came without a RAW file. If you shot RAW+JPEG, use Choose RAW+JPEG Photos: Photos keeps the RAW behind the JPEG, where the photo picker can't reach it. Otherwise, pick the .RAF itself, from Photos or with Browse Files. 2 of the 4 photos couldn't be copied from your library. Try picking them again.")
     }
 }

@@ -10,20 +10,27 @@ import UniformTypeIdentifiers
 /// without a RAW resource is counted rather than dropped, so the picker can say what it left out.
 ///
 /// The picker shares a RAW-only photo's RAF — a RAF the Fujifilm app downloaded to the phone is one
-/// (X-T50 owner, 2026-10-31). A RAW+JPEG pair held as one photo is different: in the iOS 27
-/// Simulator (2026-10-23) such a pair offered `public.jpeg` and two private thumbnail types, and
-/// asking it for a RAW returned nothing; unconfirmed on a phone. Reaching that pair's RAF would take
-/// photo library access, which this avoids.
+/// (X-T50 owner, 2026-10-31). A RAW+JPEG pair held as one photo is different: the picker offers
+/// `public.jpeg` and two private thumbnail types, and asking it for a RAW fails (iPhone 14 Pro,
+/// iOS 27.0.1, 2026-11-13). Its RAF is reachable only with photo library access, so a pair is
+/// copied through `PhotoLibraryAccessing` when the user has already granted it, and otherwise
+/// counted as a photo without a RAW. This never asks for access; Choose RAW+JPEG Photos does.
 enum PhotoLibraryRAW {
     /// What copying a selection produced: the RAW files now in the app's temporary directory, and
     /// how many picked photos didn't yield one.
     struct Import: Equatable {
         var urls: [URL] = []
-        /// Photos the picker shares no RAW for: a JPEG or HEIC with nothing attached, which is the
-        /// usual case, or a RAW+JPEG pair held as one photo.
+        /// Photos the picker shares no RAW for and the app couldn't look inside: a JPEG or HEIC with
+        /// nothing attached, which is the usual case, or a RAW+JPEG pair held as one photo.
         var withoutRAW = 0
+        /// Photos the app looked inside through photo library access and found no Fujifilm RAW in,
+        /// so Choose RAW+JPEG Photos wouldn't find one either.
+        var checkedWithoutRAW = 0
         /// Photos that offer a RAW but couldn't be copied out of the library.
         var failed = 0
+        /// Photos whose originals are two RAWs or two non-RAW images, so which to develop can't be
+        /// told; see `RAWResourceChoice.Verdict.invalid`.
+        var unusable = 0
     }
 
     /// Whether a picked photo offers a RAW resource, judged from its content types before anything
@@ -32,14 +39,14 @@ enum PhotoLibraryRAW {
         types.contains { $0.conforms(to: .rawImage) }
     }
 
-    /// Copy each picked photo's RAW file into the app, in the order picked. Stops early, and returns
-    /// what it has so far, if the task is cancelled.
-    static func copy(_ items: [PhotosPickerItem]) async -> Import {
+    /// Copy each picked photo's RAW file into the app, in the order picked. A cancelled copy stops
+    /// early, removes what it copied and returns nothing.
+    static func copy(_ items: [PhotosPickerItem], library: any PhotoLibraryAccessing) async -> Import {
         var result = Import()
         for item in items {
             guard !Task.isCancelled else { break }
             guard carriesRAW(item.supportedContentTypes) else {
-                result.withoutRAW += 1
+                await copyThroughLibrary(item, from: library, into: &result)
                 continue
             }
             do {
@@ -53,35 +60,92 @@ enum PhotoLibraryRAW {
                 AppLog.error(.kitchen, "Couldn't copy a picked photo's RAW out of the library — \(AppLog.bounded(error))")
             }
         }
+        guard !Task.isCancelled else {
+            result.discardCopies()
+            return Import()
+        }
         return result
     }
 }
 
+extension PhotoLibraryRAW {
+    /// A photo the picker offers no RAW for: its RAF read by identifier when the app already has
+    /// photo library access to it, else counted as without a RAW. With limited access a pick outside
+    /// the user's selection fetches nothing and counts as without.
+    private static func copyThroughLibrary(_ item: PhotosPickerItem, from library: any PhotoLibraryAccessing,
+                                           into result: inout Import) async {
+        guard library.access.canRead, let id = item.itemIdentifier else {
+            result.withoutRAW += 1
+            return
+        }
+        do {
+            result.urls.append(try await library.copyRAF(of: id) { _ in })
+        } catch RAWCopyError.notVisible {
+            result.withoutRAW += 1
+        } catch RAWCopyError.noRAW {
+            result.checkedWithoutRAW += 1
+        } catch RAWCopyError.invalidOriginals {
+            result.unusable += 1
+        } catch {
+            guard !Task.isCancelled else { return }
+            result.failed += 1
+            AppLog.error(.kitchen, "Couldn't copy a picked photo's RAW out of the library — \(AppLog.bounded(error))")
+        }
+    }
+}
+
 extension PhotoLibraryRAW.Import {
+    /// Removes the copied files. Each copy sits in a temporary directory of its own, so removing
+    /// the directory removes the copy.
+    func discardCopies() {
+        for url in urls {
+            try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        }
+    }
+
     /// What to tell the user about the photos that didn't make it into the selection.
     struct Problem: Equatable {
         let title: String
         let message: String
+        /// Whether the alert offers Choose RAW+JPEG Photos: a photo came without a RAW, and it may be
+        /// a pair whose RAW the picker can't share.
+        var offersRAWPairs = false
     }
 
     /// Nil when every picked photo arrived as a RAW file.
     var problem: Problem? {
-        guard withoutRAW + failed > 0 else { return nil }
-        let total = urls.count + withoutRAW + failed
+        let noRAW = withoutRAW + checkedWithoutRAW
+        guard noRAW + failed + unusable > 0 else { return nil }
+        let total = urls.count + noRAW + failed + unusable
         var sentences: [String] = []
-        if withoutRAW > 0 {
-            // The plain fact first: the picked photo has no RAW, which for a JPEG is simply what it
-            // is. The pair case is real but rare and unconfirmed on a phone, so it comes last and
-            // hedged, and doesn't make a plain JPEG sound like a RAW the app failed to reach.
+        if noRAW > 0 {
+            // The plain fact first: what arrived had no RAW, which for a JPEG is simply what it is.
+            // Where the app couldn't look inside a photo, it can't tell a plain JPEG from a pair, so
+            // the pair route is offered conditionally, and the way in for a plain .RAF comes after
+            // it. A photo the library confirmed has no RAW gets only the plain .RAF route.
             if total == 1 {
-                sentences.append("That photo has no RAW file attached.")
-            } else if withoutRAW == total {
-                sentences.append("None of those photos has a RAW file attached.")
+                sentences.append("That photo came without a RAW file.")
+            } else if noRAW == total {
+                sentences.append("None of those photos came with a RAW file.")
             } else {
-                sentences.append("\(withoutRAW) of the \(total) photos \(withoutRAW == 1 ? "has" : "have") no RAW file attached.")
+                sentences.append("\(noRAW) of the \(total) photos came without a RAW file.")
             }
-            sentences.append("Pick the .RAF itself — from Photos if the Fujifilm app downloaded it to your phone, or with Browse Files.")
-            sentences.append("A photo Photos holds as a RAW+JPEG pair may offer only its JPEG; bring its .RAF in on its own.")
+            if withoutRAW > 0 {
+                sentences.append("If you shot RAW+JPEG, use Choose RAW+JPEG Photos: Photos keeps the RAW behind the JPEG, where the photo picker can't reach it.")
+                sentences.append("Otherwise, pick the .RAF itself, from Photos or with Browse Files.")
+            } else {
+                sentences.append("Pick the .RAF itself, from Photos or with Browse Files.")
+            }
+        }
+        if unusable > 0 {
+            let reason = "so the app can't tell which one to develop."
+            if total == 1 {
+                sentences.append("That photo holds two RAW files or two JPEG files, \(reason)")
+            } else if unusable == total {
+                sentences.append("Those photos each hold two RAW files or two JPEG files, \(reason)")
+            } else {
+                sentences.append("\(unusable) of the \(total) photos \(unusable == 1 ? "holds" : "hold") two RAW files or two JPEG files, \(reason)")
+            }
         }
         if failed > 0 {
             if total == 1 {
@@ -100,7 +164,7 @@ extension PhotoLibraryRAW.Import {
         } else {
             title = "Some Photos Weren't Added"
         }
-        return Problem(title: title, message: sentences.joined(separator: " "))
+        return Problem(title: title, message: sentences.joined(separator: " "), offersRAWPairs: withoutRAW > 0)
     }
 }
 

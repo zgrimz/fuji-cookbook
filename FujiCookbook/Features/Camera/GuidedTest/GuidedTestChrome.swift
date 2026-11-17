@@ -95,11 +95,11 @@ struct GuidedPrimaryButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if busy { ProgressView().tint(.white) }
+                if busy { ProgressView().tint(Theme.onAccent) }
                 if let systemImage, !busy { Image(systemName: systemImage) }
                 Text(title).font(.headline)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(Theme.onAccent)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 15)
             .background(Theme.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))

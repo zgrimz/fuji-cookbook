@@ -24,6 +24,10 @@ enum Theme {
     static let line = dynamic(light: 0xE7DFCF, dark: 0x3B342A)
     /// Primary accent — deep cookbook green.
     static let accent = dynamic(light: 0x2E6B4A, dark: 0x76BC93)
+    /// Text and symbols on an `accent` fill. White on the light green, dark on the dark-mode green,
+    /// which is too light to carry white: white on it measures about 2.2:1, under the 3:1 large
+    /// text needs; this measures about 7.8:1, and white on the light green about 6.3:1.
+    static let onAccent = dynamic(light: 0xFFFFFF, dark: 0x1C1914)
     /// Soft accent fill (filled slot badges, selected states).
     static let accentSoft = dynamic(light: 0xE4EFE6, dark: 0x24382C)
     /// The Kitchen's "cook" amber.
