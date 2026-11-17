@@ -51,7 +51,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
     /// Where the user creates a key, as the Settings footer prints it: a host and path, not a URL.
     var apiKeyPageAddress: String {
         switch self {
-        case .anthropic: return "console.anthropic.com"
+        case .anthropic: return "platform.claude.com/settings/keys"
         case .openai: return "platform.openai.com/api-keys"
         }
     }
