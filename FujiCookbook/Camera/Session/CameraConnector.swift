@@ -57,11 +57,6 @@ final class CameraConnector {
     /// Auto-recovery after an *already-established* session drops (a cable jostle, a missed
     /// keepalive).
     private var recovery: Task<Void, Never>?
-    /// Bumped each time `beginRecovery` starts a recovery task. The task clears `recovery` when it ends, asynchronously —
-    /// and a task cancelled by backgrounding ends *after* `resumeFromBackground` has started its
-    /// replacement, so without this it would clear the replacement's handle: a recovery running
-    /// with nothing pointing at it, uncancellable and free to be doubled.
-    private var recoveryGeneration: UInt64 = 0
     /// Whether a dropped session is being re-established right now. The guided test's gate reads
     /// this rather than the status text.
     var isRecovering: Bool { recovery != nil }
@@ -251,7 +246,7 @@ final class CameraConnector {
         // nothing else cancels the loop — leaving a recovery running that would, on its next
         // attempt, tear down the very session this tap is about to establish. The expected
         // schedule's longer wait widens that race.
-        recovery?.cancel(); recovery = nil
+        cancelRecovery()
         // A failed operation leaves the old transport (and its open PTP session) in place so the UI
         // can show the error. Reconnecting on top of that half-dead session makes the new open
         // intermittently fail — tear it down first.
@@ -479,7 +474,7 @@ final class CameraConnector {
     func disconnect() async {
         session.advanceEpoch()   // retire anything still in flight from the outgoing session
         CameraLog.info("Disconnect requested")
-        recovery?.cancel(); recovery = nil
+        cancelRecovery()
         keepAlive?.cancel(); keepAlive = nil
         isSuspended = false
         connectedDevice = nil
@@ -549,7 +544,7 @@ final class CameraConnector {
         guard !isSuspended, transport != nil else { return }
         isSuspended = true
         keepAlive?.cancel(); keepAlive = nil
-        recovery?.cancel(); recovery = nil
+        cancelRecovery()
         CameraLog.info("App backgrounded — pausing keepalive; session stays open")
     }
 
@@ -635,10 +630,11 @@ final class CameraConnector {
 
         status = .working(expected ? "Waiting for the camera to come back…" : "Reconnecting…")
         let (delays, deviceWait) = RecoveryPolicy.plan(expected: expected)
-        recoveryGeneration &+= 1
-        let generation = recoveryGeneration
         recovery = Task { [weak self] in
-            defer { Task { @MainActor in if self?.recoveryGeneration == generation { self?.recovery = nil } } }
+            // Before this task ends, `recovery` is dropped only through `cancelRecovery`, which
+            // cancels it first. So a cancelled task no longer owns the handle, which may already
+            // belong to its replacement, and only a task that ends uncancelled clears it.
+            defer { if !Task.isCancelled { self?.recovery = nil } }
             for (attempt, delay) in delays.enumerated() {
                 try? await Task.sleep(nanoseconds: delay)
                 guard let self, !Task.isCancelled, !self.isSuspended else { return }
@@ -670,6 +666,15 @@ final class CameraConnector {
             CameraLog.error("Recovery: gave up after \(delays.count) attempts")
             await self.endUnrecoveredLoss()
         }
+    }
+
+    /// Stops the recovery under way and drops its handle, the one way the handle is dropped before
+    /// its task ends. The two go together: dropping the handle without cancelling would let the old
+    /// task, on ending, clear a replacement's handle; cancelling without dropping it would leave
+    /// `isRecovering` set and `beginRecovery` refusing every later loss.
+    private func cancelRecovery() {
+        recovery?.cancel()
+        recovery = nil
     }
 
     /// Recovery is over and the camera isn't back.
