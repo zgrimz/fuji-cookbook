@@ -252,9 +252,9 @@ struct CameraView: View {
                     switch state {
                     case .live:
                         Circle()
-                            .fill(Color(red: 0.56, green: 0.89, blue: 0.69))
+                            .fill(Theme.liveDot)
                             .frame(width: 10, height: 10)
-                            .background(Circle().fill(Color(red: 0.56, green: 0.89, blue: 0.69).opacity(0.25)).frame(width: 18, height: 18))
+                            .background(Circle().fill(Theme.liveDot.opacity(0.25)).frame(width: 18, height: 18))
                     case .reconnecting:
                         // Laid out at the dot's size and allowed to overflow it, as the dot's halo
                         // does, so the header text doesn't move when the state changes.
